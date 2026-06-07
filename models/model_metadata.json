@@ -1,0 +1,20 @@
+{
+  "action_meanings": {
+    "0": "Hold Firm",
+    "1": "Concede Small (5%)",
+    "2": "Concede Large (15%)",
+    "3": "Bluff (move away 5%)",
+    "4": "Walk Away"
+  },
+  "observation_schema": [
+    "own_offer_norm",
+    "opponent_offer_norm",
+    "turn_norm",
+    "own_concession_rate",
+    "opponent_concession_rate",
+    "gap_norm",
+    "turns_since_last_concession_norm"
+  ],
+  "total_timesteps": 300000,
+  "agent_role": "buyer"
+}
