@@ -1,0 +1,1193 @@
+================================================================================
+                      PARLEYLAB — SYSTEM ARCHITECTURE
+                AI Negotiation Coach via Adversarial Simulation
+                          Team: Hell's Kitchen
+================================================================================
+
+Document version: 1.0
+Last updated:     Hackathon submission
+Audience:         Judges, technical reviewers, contributing engineers
+
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+
+  1. Overview
+  2. Design Goals
+  3. High-Level Architecture
+  4. Component Breakdown
+       4.1  Next.js Frontend
+       4.2  FastAPI Backend
+       4.3  Move Parser (LLM)
+       4.4  RL Strategy Policy (PPO)
+       4.5  Opponent Agent (LLM)
+       4.6  Critic Agent (LLM)
+       4.7  Session State Manager
+       4.8  Scenario Library
+       4.9  Voice Input (Speech-to-Text)
+  5. Per-Turn Data Flow
+  6. State Model
+  7. API Contract
+  8. LLM Layer Configuration
+  9. Reinforcement Learning Setup
+ 10. Hidden State Isolation
+ 11. Deployment Topology
+ 12. Failure Modes and Fallbacks
+ 13. Security and Privacy Notes
+ 14. Performance Characteristics
+ 15. Tech Stack Summary
+ 16. Repository Layout
+ 17. Glossary
+
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+ParleyLab is a live AI negotiation simulator. A user enters a structured
+scenario (salary negotiation, freelance contract, apartment rent, or equity
+split) and negotiates against an AI opponent that has:
+
+    - A hidden objective
+    - A walk-away point (BATNA)
+    - A strategic policy controlled by a trained reinforcement learning agent
+
+After every user move, an independent critic agent evaluates the move against
+negotiation theory (BATNA awareness, anchoring, concession pacing, reciprocity)
+and returns structured feedback in real time. At the end of the session, the
+opponent's hidden state is revealed and the user's overall performance is
+scored.
+
+The system combines two distinct AI layers:
+
+    - A generative language layer (LLMs) for natural conversation
+    - A trained strategy layer (RL) for opponent decision-making
+
+Neither layer is novel in isolation. The combination — and the architectural
+separation between them — is what makes ParleyLab distinct.
+
+
+================================================================================
+2. DESIGN GOALS
+================================================================================
+
+  G1. Realism
+      The opponent must feel like a competent negotiator, not a scripted bot.
+
+  G2. Hidden state integrity
+      The opponent's private objective, BATNA, and strategic intent must
+      never leak into the user-visible conversation.
+
+  G3. Decoupled language and strategy
+      Strategic decisions (when to concede, hold, bluff, walk) must be made
+      independently of language generation. This is the architectural
+      backbone of the system.
+
+  G4. Domain-agnostic critic
+      Feedback must be grounded in negotiation theory, not vibes.
+
+  G5. Free and local-first
+      Every layer must run on a free stack (Ollama models, free LLM tiers,
+      open-source RL libraries) with zero infrastructure cost.
+
+  G6. Demonstrable in under 60 seconds
+      A judge must be able to start, complete, and review a negotiation in
+      under a minute.
+
+  G7. Multimodal input
+      The user can negotiate by typing OR by speaking. Speech is converted
+      to text in the browser before being sent to the backend, so the
+      negotiation pipeline downstream remains identical regardless of
+      input modality.
+
+
+================================================================================
+3. HIGH-LEVEL ARCHITECTURE
+================================================================================
+
+                            ┌──────────────────────────┐
+                            │      Next.js Frontend    │
+                            │   (React + Tailwind UI)  │
+                            │                          │
+                            │  - Scenario selection    │
+                            │  - Live chat interface   │
+                            │  - Critic feedback panel │
+                            │  - End-of-session reveal │
+                            │                          │
+                            │  Input modality:         │
+                            │   • Text (keyboard)      │
+                            │   • Voice (Web Speech)   │
+                            └────────────┬─────────────┘
+                                         │
+                                         │  HTTP/JSON  (CORS allowed)
+                                         │  (text only — voice is
+                                         │   transcribed in-browser)
+                                         │
+                            ┌────────────▼─────────────┐
+                            │     FastAPI Backend      │
+                            │   (Hidden State Owner)   │
+                            │                          │
+                            │  - Session orchestration │
+                            │  - Routes LLM + RL calls │
+                            │  - Holds private context │
+                            └────┬───────────┬────┬────┘
+                                 │           │    │
+                  ┌──────────────┘           │    └──────────────┐
+                  │                          │                   │
+       ┌──────────▼──────────┐    ┌──────────▼──────┐  ┌─────────▼─────────┐
+       │   Move Parser       │    │  RL Strategy    │  │   LLM Agents      │
+       │   (LLM)             │    │  Policy (PPO)   │  │                   │
+       │                     │    │                 │  │  - Opponent Agent │
+       │  Extracts:          │    │  Decides:       │  │  - Critic Agent   │
+       │  offer / anchor /   │    │  Hold / Concede │  │                   │
+       │  concession / bluff │    │  Bluff / Walk   │  │  (Ollama /        │
+       │  signal             │    │                 │  │   Gemini)         │
+       │                     │    │  (Stable-       │  │                   │
+       │  (Ollama /          │    │   Baselines3,   │  │                   │
+       │   Gemini)           │    │   pre-trained)  │  │                   │
+       └─────────────────────┘    └─────────────────┘  └───────────────────┘
+
+
+================================================================================
+4. COMPONENT BREAKDOWN
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1  NEXT.JS FRONTEND
+--------------------------------------------------------------------------------
+
+Purpose
+    Owns all user-facing rendering and interaction. Stateless with respect
+    to negotiation logic — it only renders what the backend returns.
+
+Responsibilities
+    - Render scenario selection page
+    - Render live chat (opponent + user messages alternating)
+    - Render the critic feedback panel after each user move
+    - Render the end-of-session reveal screen
+    - Manage UI state (loading indicators, input box, scroll)
+
+Pages
+    /                          Scenario selection landing
+    /negotiation/[scenarioId]  Live negotiation interface
+    /results/[sessionId]       End-of-session reveal and score
+
+Key components
+    ScenarioCard.tsx           Card displaying a scenario option
+    RoleBrief.tsx              Sticky banner showing user's role + BATNA
+    ChatMessage.tsx            Single message bubble (user or opponent)
+    InputBox.tsx               User's free-text input
+    CriticPanel.tsx            Live critic feedback card
+    PerformanceScore.tsx       Final score visualization
+
+Communication
+    Calls FastAPI over HTTP using `fetch`. No direct LLM or RL calls.
+    Never sees the opponent's hidden state.
+
+--------------------------------------------------------------------------------
+4.2  FASTAPI BACKEND
+--------------------------------------------------------------------------------
+
+Purpose
+    The single source of truth for session state. Orchestrates the
+    per-turn pipeline: parses user input, queries RL policy, generates
+    opponent response, generates critic feedback.
+
+Responsibilities
+    - Create and manage negotiation sessions
+    - Maintain the full session state in memory
+    - Hold and protect the opponent's hidden context
+    - Call the Move Parser, RL Policy, Opponent Agent, and Critic Agent
+      in the correct order
+    - Return only the user-safe slice of state to the frontend
+
+Why a separate backend (and not just a fat frontend)
+    Hidden state is the entire point. If the opponent's BATNA, target, or
+    next planned move were ever sent to the browser, a curious user could
+    read it from devtools and the negotiation collapses. FastAPI is the
+    guard.
+
+Endpoints (see Section 7 for full contract)
+    POST /session/start
+    POST /session/{id}/move
+    GET  /session/{id}/reveal
+    GET  /healthz
+
+--------------------------------------------------------------------------------
+4.3  MOVE PARSER (LLM)
+--------------------------------------------------------------------------------
+
+Purpose
+    Convert free-form user text into structured negotiation primitives.
+
+Input
+    A natural language user message, e.g.
+    "I appreciate the offer, but I have a competing bid at 85K. I'd be
+     willing to come down to 92K if you can also include relocation."
+
+Output (JSON)
+    {
+      "primary_move":    "counteroffer",
+      "offered_value":   92000,
+      "concession":      3000,
+      "signals":         ["competing_bid_disclosure", "bundled_demand"],
+      "tone":            "collaborative",
+      "anchors_used":    ["competing_bid_at_85k"]
+    }
+
+Implementation
+    A single LLM call with a tightly constrained system prompt and a JSON
+    schema. Returns deterministically (low temperature). If JSON parsing
+    fails, falls back to a default structure and continues the session.
+
+--------------------------------------------------------------------------------
+4.4  RL STRATEGY POLICY (PPO)
+--------------------------------------------------------------------------------
+
+Purpose
+    Decide the opponent's strategic action each turn. Not the language —
+    just the strategic intent.
+
+Input (7-dimensional normalized state vector)
+    [0]  own_offer_norm                    : own current offer / 100
+    [1]  opponent_offer_norm                : opponent (user) current offer / 100
+    [2]  turn_norm                          : current turn / max turns
+    [3]  own_concession_rate                : own total movement so far
+    [4]  opponent_concession_rate           : user's total movement so far
+    [5]  gap_norm                           : current gap between offers
+    [6]  turns_since_last_concession_norm   : how long since opponent moved
+
+Output
+    A single integer action in {0, 1, 2, 3, 4}:
+        0  Hold Firm        (no change to offer)
+        1  Concede Small    (5% toward user)
+        2  Concede Large    (15% toward user)
+        3  Bluff             (5% away from user)
+        4  Walk Away         (end negotiation, take BATNA)
+
+Why this is a separate layer
+    LLMs are unreliable strategists. Asked "should I concede now?", they
+    drift, contradict themselves, and lack a notion of accumulated
+    concession history. A trained policy, by contrast, was rewarded only
+    for closing favourable deals over 300,000 episodes. It is principled
+    where an LLM is intuitive.
+
+Training summary
+    Algorithm:        PPO (Proximal Policy Optimization)
+    Library:          Stable-Baselines3
+    Environment:      Custom Gymnasium env with rule-based counterpart
+    Timesteps:        300,000
+    Entropy:          Annealed 0.05 → 0.005 (exploration → exploitation)
+    Deal close rate:  86% over 100 evaluation episodes
+    Avg reward:       +10.09
+
+Inference cost
+    Negligible — one forward pass through a small MLP. Sub-millisecond on CPU.
+
+--------------------------------------------------------------------------------
+4.5  OPPONENT AGENT (LLM)
+--------------------------------------------------------------------------------
+
+Purpose
+    Convert the RL policy's strategic decision into natural language that
+    is consistent with the opponent's persona and the conversation so far.
+
+Input
+    - Hidden context (target, BATNA, persona, urgency)
+    - Strategic action chosen by the RL policy
+    - Full conversation history so far
+    - The user's most recent message and parsed structure
+
+Output
+    A natural language response, e.g. for the action "Concede Small":
+    "I hear you on the competing bid. I can stretch to 88K and include
+     a relocation stipend, but 92K is genuinely outside our band for
+     this role."
+
+Why this is a separate layer from the RL policy
+    The RL policy made the decision (concede small). The opponent agent
+    only translates it. This keeps language quality high (LLMs are great
+    at this) while keeping strategy principled (RL handles it).
+
+Persona variation
+    Different scenarios get different opponent personas:
+        - Salary HM:      Polite, evasive, references "budget bands"
+        - Freelance client: Direct, time-pressured, anchors aggressively
+        - Landlord:       Cordial, references market rates
+        - Co-founder:     Friendly, references shared upside
+
+--------------------------------------------------------------------------------
+4.6  CRITIC AGENT (LLM)
+--------------------------------------------------------------------------------
+
+Purpose
+    Evaluate the user's most recent move against negotiation theory.
+
+Input
+    - The user's parsed move (from the Move Parser)
+    - Full conversation history
+    - The negotiation framework (BATNA awareness, anchoring effectiveness,
+      concession pacing, reciprocity signaling)
+
+Output (JSON)
+    {
+      "strengths":   ["Anchored above target before conceding"],
+      "weaknesses":  ["Revealed competing-bid value too early"],
+      "suggestion":  "Withhold the competing-bid number — disclose its
+                      existence first, leverage the ambiguity.",
+      "concept_tag": "anchoring"
+    }
+
+Independence
+    The critic must not see the opponent's hidden state. It evaluates
+    only the user's behavior. This keeps its judgment unbiased — it
+    rewards good moves even when the opponent happens to "punish" them
+    in conversation.
+
+--------------------------------------------------------------------------------
+4.7  SESSION STATE MANAGER
+--------------------------------------------------------------------------------
+
+Purpose
+    Hold all per-session state in memory inside FastAPI. No database is
+    required for the hackathon scope.
+
+Storage
+    `Dict[session_id, SessionState]` held in a module-level singleton.
+    Sufficient for a single-user demo. For production, swap for Redis.
+
+Lifecycle
+    - Created by POST /session/start
+    - Updated by every POST /session/{id}/move
+    - Frozen + finalized when the session ends (deal closed, walked
+      away, or max turns reached)
+    - Read once more by GET /session/{id}/reveal
+    - Garbage collected after 30 minutes idle
+
+--------------------------------------------------------------------------------
+4.8  SCENARIO LIBRARY
+--------------------------------------------------------------------------------
+
+Purpose
+    Reusable, configurable negotiation scenarios.
+
+Format
+    JSON files in `scenarios/`. One per scenario.
+
+Schema (per scenario)
+    {
+      "id":                "salary_v1",
+      "display_name":      "Salary Negotiation",
+      "user_role":         "Candidate",
+      "opponent_role":     "Hiring Manager",
+      "user_brief": {
+        "target":             95000,
+        "batna":              80000,
+        "context":            "You have a competing offer and 2 days to decide."
+      },
+      "opponent_hidden": {
+        "target":             82000,
+        "batna":              90000,
+        "persona":            "Polite but budget-constrained",
+        "urgency":            "Moderate — role open for 6 weeks"
+      },
+      "opening_offer":     78000,
+      "max_turns":         10,
+      "value_unit":        "USD per year"
+    }
+
+Adding a new scenario
+    Drop a new JSON file into `scenarios/`. No code changes required.
+
+--------------------------------------------------------------------------------
+4.9  VOICE INPUT (SPEECH-TO-TEXT)
+--------------------------------------------------------------------------------
+
+Purpose
+    Let users speak their negotiation moves instead of typing. The
+    transcribed text feeds the same pipeline as keyboard input — the
+    backend does not know or care which modality was used.
+
+Modality contract
+    Voice is OPTIONAL and ADDITIVE. The text input always works. Voice
+    is a second path for the same negotiation move:
+
+        Voice ─► STT (browser) ─► text string ─► [same as typing]
+
+Why client-side STT (not server-side Whisper)
+    1. Zero infrastructure cost — uses the browser's built-in Web Speech
+       API (Chrome, Edge, Safari).
+    2. No new backend dependency, no model file to host.
+    3. Latency is sub-second since audio never leaves the device.
+    4. Privacy: the user's voice never reaches our server.
+
+    Trade-off: accuracy is lower than Whisper, especially for non-native
+    English accents. Acceptable for a hackathon demo where the user can
+    always edit the transcript before sending.
+
+UI behavior (push-to-talk)
+    The InputBox component has two affordances:
+        - Text field (always available)
+        - Microphone button to the right of the field
+
+    Click flow:
+        1. User clicks the mic button.
+        2. Browser requests microphone permission (one-time).
+        3. Button turns red and pulses to indicate active recording.
+        4. As the user speaks, transcribed text streams into the text
+           field in real time.
+        5. User clicks the mic button again (or pauses for 2 seconds)
+           to stop recording.
+        6. The user reviews/edits the transcript in the text field.
+        7. User hits Send (Enter or click). Move is submitted exactly
+           as a typed message would be.
+
+    The mic button is hidden gracefully if the browser does not support
+    the Web Speech API.
+
+Component structure
+    components/
+    ├── InputBox.tsx              Wraps text field + mic button
+    ├── MicButton.tsx             Push-to-talk control with recording
+    │                              animation
+    └── hooks/
+        └── useSpeechRecognition.ts   Wraps Web Speech API
+
+Implementation outline (React + TypeScript)
+
+    // hooks/useSpeechRecognition.ts
+    export function useSpeechRecognition() {
+      const [transcript, setTranscript]   = useState("");
+      const [isListening, setIsListening] = useState(false);
+      const [isSupported]                 = useState(
+        typeof window !== "undefined" &&
+        ("SpeechRecognition" in window ||
+         "webkitSpeechRecognition" in window)
+      );
+      const recognitionRef = useRef<any>(null);
+
+      const start = () => {
+        const SR = (window as any).SpeechRecognition ||
+                   (window as any).webkitSpeechRecognition;
+        const r  = new SR();
+        r.continuous     = true;
+        r.interimResults = true;
+        r.lang           = "en-US";
+
+        r.onresult = (e: any) => {
+          const text = Array.from(e.results)
+            .map((res: any) => res[0].transcript)
+            .join("");
+          setTranscript(text);
+        };
+        r.onend = () => setIsListening(false);
+
+        recognitionRef.current = r;
+        r.start();
+        setIsListening(true);
+      };
+
+      const stop = () => {
+        recognitionRef.current?.stop();
+        setIsListening(false);
+      };
+
+      return { transcript, isListening, isSupported, start, stop };
+    }
+
+    // components/MicButton.tsx
+    export function MicButton({ onTranscript }: {
+      onTranscript: (text: string) => void;
+    }) {
+      const { transcript, isListening, isSupported, start, stop } =
+        useSpeechRecognition();
+
+      useEffect(() => {
+        if (transcript) onTranscript(transcript);
+      }, [transcript]);
+
+      if (!isSupported) return null;
+
+      return (
+        <button
+          onClick={isListening ? stop : start}
+          className={isListening ? "mic-active" : "mic-idle"}
+          aria-label={isListening ? "Stop recording" : "Start recording"}
+        >
+          <Mic />
+        </button>
+      );
+    }
+
+Permissions and security
+    - The browser asks for microphone permission the first time the
+      user clicks the mic button. This is handled entirely by the
+      browser; no extra work is required from our app.
+    - Audio is processed locally by the browser. Nothing leaves the
+      device except the final transcribed text, which travels through
+      the same API as typed text.
+    - The microphone is released immediately when recording stops.
+
+Browser support
+    Chrome, Edge, Safari, Opera     Supported via Web Speech API
+    Firefox                         Limited — graceful fallback to
+                                    text-only is automatic
+
+Latency
+    Web Speech API transcription is essentially real-time. The bottleneck
+    in a voice-driven turn remains the LLM call, not the STT step.
+
+Failure handling
+    - User denies microphone permission   Mic button stays visible but
+                                          shows a tooltip explaining
+                                          how to re-enable it. Text
+                                          input continues to work.
+    - Browser does not support Web Speech Mic button is hidden. No
+                                          functionality is lost; the
+                                          user simply types.
+    - Mic captures garbled text           The transcript appears in
+                                          the text field. The user
+                                          can edit before sending.
+                                          No automatic resubmission.
+
+Optional future extension: Text-to-Speech for the opponent
+    The browser also exposes a `SpeechSynthesis` API. The opponent's
+    response could be spoken aloud, making the full negotiation feel
+    like a phone call. This is INTENTIONALLY left out of the v1 demo
+    because:
+        1. The critic panel becomes hard to follow if everything is
+           audio. Reading the opponent's reply lets the user pause and
+           reflect on the critic feedback.
+        2. Voices for free TTS are robotic and undercut the realism
+           the rest of the system is trying to build.
+    If added later, the opponent voice should match the persona
+    (calm/professional for HM, hurried for time-pressured client).
+
+
+================================================================================
+5. PER-TURN DATA FLOW
+================================================================================
+
+A single negotiation turn proceeds through six stages. Stages 2 through 5
+all happen server-side inside FastAPI in response to one HTTP call.
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │  STAGE 1: USER INPUT (frontend)                                     │
+  │  ─────────────────────                                              │
+  │  User sends a move via one of two paths:                            │
+  │                                                                     │
+  │    Path A — Typing:                                                 │
+  │      Types into the text field and hits Send.                       │
+  │                                                                     │
+  │    Path B — Speaking:                                               │
+  │      Clicks the mic button, speaks the move, clicks to stop.        │
+  │      Web Speech API transcribes locally in the browser. The         │
+  │      transcript appears in the same text field. User reviews and    │
+  │      edits if needed, then hits Send.                               │
+  │                                                                     │
+  │  Either path produces the same payload sent to the backend —        │
+  │  the system downstream is modality-agnostic.                        │
+  │                                                                     │
+  │  Frontend → POST /session/{id}/move                                 │
+  │  body: { user_message: "..." }                                      │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │  STAGE 2: MOVE PARSING (LLM)                                        │
+  │  ──────────────────────────                                         │
+  │  FastAPI sends user_message to the Move Parser LLM.                 │
+  │  Receives structured JSON describing the move.                      │
+  │                                                                     │
+  │  Output: { primary_move, offered_value, signals, tone }             │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │  STAGE 3: STATE UPDATE                                              │
+  │  ─────────────────────                                              │
+  │  FastAPI updates the negotiation state vector with the new          │
+  │  offers, concession history, and turn count.                        │
+  │                                                                     │
+  │  Builds the 7-dimensional input for the RL policy.                  │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │  STAGE 4: STRATEGIC DECISION (RL)                                   │
+  │  ───────────────────────────────                                    │
+  │  FastAPI passes the state vector to the loaded PPO policy.          │
+  │  Policy returns an integer action.                                  │
+  │                                                                     │
+  │  Output: action ∈ {Hold, Concede S, Concede L, Bluff, Walk}         │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │  STAGE 5a: OPPONENT RESPONSE (LLM)                                  │
+  │  ────────────────────────────────                                   │
+  │  FastAPI calls the Opponent Agent LLM with:                         │
+  │    - Hidden context (persona, BATNA, target)                        │
+  │    - The chosen strategic action                                    │
+  │    - Conversation history                                           │
+  │                                                                     │
+  │  Returns: natural language opponent reply.                          │
+  │                                                                     │
+  │  STAGE 5b: CRITIC FEEDBACK (LLM)  [runs in parallel with 5a]        │
+  │  ───────────────────────────────                                    │
+  │  FastAPI calls the Critic Agent LLM with:                           │
+  │    - The user's parsed move                                         │
+  │    - Conversation history                                           │
+  │    - Negotiation framework rubric                                   │
+  │                                                                     │
+  │  Returns: { strengths, weaknesses, suggestion, concept_tag }        │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │  STAGE 6: RENDER (frontend)                                         │
+  │  ─────────────────────────                                          │
+  │  FastAPI returns to the frontend:                                   │
+  │    {                                                                │
+  │      opponent_response,                                             │
+  │      critic_feedback,                                               │
+  │      turn_number,                                                   │
+  │      is_complete                                                    │
+  │    }                                                                │
+  │                                                                     │
+  │  Hidden state is NEVER included in this payload.                    │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+6. STATE MODEL
+================================================================================
+
+Each session is represented as a single Python object held in memory:
+
+    @dataclass
+    class SessionState:
+        # Identifiers
+        session_id:           str
+        scenario_id:          str
+        created_at:           datetime
+        last_active_at:       datetime
+
+        # User-visible state
+        user_role:            str
+        user_brief:           UserBrief        # target, BATNA, context
+        opening_offer:        float
+        max_turns:            int
+        turn:                 int
+        is_complete:          bool
+        outcome:              Optional[str]    # deal / walked / timeout
+
+        # Conversation
+        history:              List[Message]    # all user + opponent messages
+        user_offers:          List[float]
+        opponent_offers:      List[float]
+
+        # ── HIDDEN — never sent to client ──────────────────────────────
+        opponent_target:      float
+        opponent_batna:       float
+        opponent_persona:     str
+        opponent_urgency:     str
+        strategic_history:    List[int]        # RL actions taken so far
+
+User-visible vs hidden
+    A `to_user_dict()` method on SessionState explicitly enumerates the
+    fields the frontend may receive. The hidden fields are never
+    serialised in normal responses. They are only emitted by
+    GET /session/{id}/reveal AFTER the session is marked complete.
+
+
+================================================================================
+7. API CONTRACT
+================================================================================
+
+All endpoints accept and return JSON. Errors use standard HTTP status codes.
+
+--------------------------------------------------------------------------------
+POST /session/start
+--------------------------------------------------------------------------------
+Purpose:  Create a new negotiation session.
+
+Request:
+    {
+      "scenario_id": "salary_v1"
+    }
+
+Response (200):
+    {
+      "session_id":      "sess_3f2a1c",
+      "user_role":       "Candidate",
+      "user_brief": {
+        "target":   95000,
+        "batna":    80000,
+        "context":  "You have a competing offer and 2 days to decide."
+      },
+      "opening_offer":   78000,
+      "opponent_role":   "Hiring Manager",
+      "opponent_opener": "We're excited to have you. We were thinking
+                          around 78K to start.",
+      "max_turns":       10
+    }
+
+--------------------------------------------------------------------------------
+POST /session/{id}/move
+--------------------------------------------------------------------------------
+Purpose:  Submit one user move and receive the opponent's reply plus
+          critic feedback for that move.
+
+Request:
+    {
+      "user_message": "I have a competing offer at 85K. I'd come down
+                       to 92K if you include relocation."
+    }
+
+Response (200):
+    {
+      "turn_number":         2,
+      "opponent_response":   "I hear you on the competing bid. I can
+                              stretch to 88K with a relocation stipend.",
+      "opponent_current_offer": 88000,
+      "critic_feedback": {
+        "strengths":   ["Anchored above target before conceding"],
+        "weaknesses":  ["Revealed competing-bid value too early"],
+        "suggestion":  "Withhold the competing-bid number next time —
+                        leverage the ambiguity.",
+        "concept_tag": "anchoring"
+      },
+      "is_complete":         false,
+      "outcome":             null
+    }
+
+--------------------------------------------------------------------------------
+GET /session/{id}/reveal
+--------------------------------------------------------------------------------
+Purpose:  Only callable after the session ends. Returns the opponent's
+          hidden state and a final performance score.
+
+Response (200):
+    {
+      "outcome":               "deal_closed",
+      "final_deal_value":      87000,
+      "opponent_hidden": {
+        "target":              82000,
+        "batna":               90000,
+        "persona":             "Polite but budget-constrained",
+        "urgency":             "Moderate"
+      },
+      "performance": {
+        "score":               72,
+        "rating":              "Good",
+        "best_move": {
+          "turn": 3,
+          "summary": "Anchored above target before conceding"
+        },
+        "worst_move": {
+          "turn": 2,
+          "summary": "Disclosed competing-bid value unnecessarily"
+        }
+      },
+      "full_transcript":       [...]
+    }
+
+If called before the session ends:
+    HTTP 409 Conflict
+    { "error": "session_not_complete" }
+
+--------------------------------------------------------------------------------
+GET /healthz
+--------------------------------------------------------------------------------
+Purpose:  Liveness probe for the backend.
+
+Response (200):
+    { "status": "ok", "rl_model_loaded": true, "llm_provider": "ollama" }
+
+
+================================================================================
+8. LLM LAYER CONFIGURATION
+================================================================================
+
+The three LLM roles (Move Parser, Opponent, Critic) are pluggable behind
+a single abstraction:
+
+    class LLMClient:
+        def chat(self, system: str, messages: List[dict],
+                 response_format: Optional[str] = None) -> str: ...
+
+Concrete implementations
+    OllamaClient    Local inference via Ollama HTTP API (localhost:11434)
+    GeminiClient    Free-tier cloud (Gemini 2.0 Flash, generous limits)
+
+Configuration is via environment variables:
+    PARLEYLAB_LLM_PROVIDER     = ollama | gemini
+    PARLEYLAB_OPPONENT_MODEL   = llama3.1:8b
+    PARLEYLAB_CRITIC_MODEL     = qwen2.5:7b
+    PARLEYLAB_PARSER_MODEL     = qwen2.5:7b
+
+Recommended pairing for the demo
+    Opponent: Llama 3.1 8B  (good dialogue, persona consistency)
+    Critic:   Qwen 2.5 7B   (strong at structured JSON output)
+    Parser:   Qwen 2.5 7B   (reuses connection with critic)
+
+Cloud fallback
+    If Ollama is unreachable, the LLMClient automatically falls back to
+    Gemini. The user never sees this; the demo keeps running.
+
+
+================================================================================
+9. REINFORCEMENT LEARNING SETUP
+================================================================================
+
+Environment
+    Name:               NegotiationEnv (custom Gymnasium environment)
+    Episode length:     Max 10 turns
+    Scenarios:          Randomized per episode with guaranteed ZOPA
+                        (zone of possible agreement)
+    Counterpart:        Rule-based opponent with deadline pressure and
+                        20% bluff probability in first 3 turns
+
+State space (7 dimensions, all normalized to [0, 1])
+    own_offer_norm
+    opponent_offer_norm
+    turn_norm
+    own_concession_rate
+    opponent_concession_rate
+    gap_norm
+    turns_since_last_concession_norm
+
+Action space (discrete, 5 actions)
+    0  Hold Firm
+    1  Concede Small  (5% toward opponent)
+    2  Concede Large  (15% toward opponent)
+    3  Bluff          (5% away from opponent)
+    4  Walk Away
+
+Reward function
+    Deal closed:    +10 base + (surplus over BATNA) * 100
+    Walked away:    -15
+    Timeout:        -3
+    Step:           -0.1  per turn
+
+Training hyperparameters
+    Algorithm:           PPO (Proximal Policy Optimization)
+    Policy network:      MLP, default Stable-Baselines3 architecture
+    Learning rate:       3e-4
+    n_steps:             2048
+    batch_size:          64
+    n_epochs:            10
+    gamma:               0.99
+    gae_lambda:          0.95
+    clip_range:          0.2
+    Entropy schedule:    0.05 → 0.005 (linear annealing via callback)
+    Total timesteps:     300,000
+
+Evaluation results (100 episodes, deterministic policy)
+    Deal close rate:     86%
+    Avg episode reward:  +10.09
+    Avg deal value:      62.01  (buyer side; lower is better)
+    Best deal value:     42.75
+    Timeout rate:        14%
+    Walk-away rate:       0%   (all current scenarios have valid ZOPA)
+
+Inference at runtime
+    The trained model is loaded once at FastAPI startup. Per-turn
+    inference is a single forward pass — sub-millisecond on CPU.
+
+
+================================================================================
+10. HIDDEN STATE ISOLATION
+================================================================================
+
+The integrity of the demo depends on the opponent's hidden state never
+leaking to the client. This is enforced at three levels.
+
+Level 1 — Storage
+    Hidden fields are only stored on the FastAPI server. They never
+    enter the frontend bundle, environment file, or static assets.
+
+Level 2 — Serialization
+    SessionState has two serializers:
+        to_user_dict()       Returns only user-visible fields
+        to_reveal_dict()     Returns hidden fields too (only after end)
+    Every endpoint uses the appropriate one.
+
+Level 3 — Prompt boundaries
+    The Critic Agent prompt explicitly omits the opponent's hidden
+    context. The critic evaluates only the user's behavior. This
+    prevents the critic from accidentally revealing hidden info in its
+    feedback text.
+
+Threat model
+    A user opening browser devtools to inspect network responses MUST
+    see no signal of the opponent's target, BATNA, persona, or planned
+    move. Only the visible conversation and turn metadata.
+
+
+================================================================================
+11. DEPLOYMENT TOPOLOGY
+================================================================================
+
+Hackathon (local demo)
+    Frontend:         Next.js dev server on  localhost:3000
+    Backend:          FastAPI + Uvicorn on   localhost:8000
+    LLM:              Ollama on              localhost:11434
+    RL model:         Loaded from models/best_model.zip at startup
+
+    All processes run on a single laptop. No internet required (Ollama
+    handles all inference locally).
+
+Recommended demo machine
+    16 GB RAM minimum (Ollama 8B + 7B models = ~10 GB combined)
+    CPU is fine for the RL inference and for 7B-8B LLMs at demo pace
+
+Optional cloud demo
+    Frontend:         Vercel (free tier)
+    Backend:          Render or Railway free tier
+    LLM:              Gemini free tier
+    RL model:         Bundled with backend container (~150 KB zip)
+
+
+================================================================================
+12. FAILURE MODES AND FALLBACKS
+================================================================================
+
+  Failure                            Fallback Behavior
+  ---------------------------------- -------------------------------------------
+  LLM call times out                 Retry once. If still failing, switch
+                                     provider (Ollama → Gemini).
+
+  LLM returns malformed JSON         Use a sensible default structure for
+  (Move Parser or Critic)            that turn. Log the raw response. Do
+                                     not break the session.
+
+  RL model file missing              FastAPI fails to start with a clear
+                                     error. Caught early.
+
+  Session ID not found               Return HTTP 404.
+
+  Move submitted after session end   Return HTTP 409 with message
+                                     "session_already_complete".
+
+  Reveal called before end           Return HTTP 409 with message
+                                     "session_not_complete".
+
+  User submits empty message         Return HTTP 422 with validation error.
+
+  CORS error (frontend → backend)    Pre-configured in app startup. See
+                                     Section 11.
+
+  Mic permission denied              Mic button shows a tooltip with
+                                     re-enable instructions. Text input
+                                     continues to work normally.
+
+  Browser lacks Web Speech API       Mic button is hidden entirely.
+                                     User negotiates by typing.
+
+  STT produces a garbled transcript  Transcript appears in the text
+                                     field for review. User can edit
+                                     before sending. No silent failure.
+
+
+================================================================================
+13. SECURITY AND PRIVACY NOTES
+================================================================================
+
+  - API keys (Groq, Gemini) are loaded from a `.env` file. Never
+    committed to the repository.
+  - No user data is persisted. All session state lives only in memory
+    and is dropped after 30 minutes idle.
+  - The application is single-user for the hackathon. There is no
+    authentication. For production, sessions would need owner binding.
+  - The trained RL model is shipped with the repo (~150 KB). It is not
+    sensitive.
+
+
+================================================================================
+14. PERFORMANCE CHARACTERISTICS
+================================================================================
+
+  Operation                        Typical Latency (local)   Notes
+  -------------------------------- ------------------------ ----------------------
+  RL policy forward pass             < 1 ms                  CPU
+  Move Parser LLM call               1.5 — 4 s              Ollama 7B local
+  Opponent Agent LLM call            2 — 6 s                Ollama 8B local
+  Critic Agent LLM call              2 — 5 s                Runs parallel to opp.
+  Full turn (end-to-end)             4 — 8 s                Bottleneck is LLM
+
+  With Gemini cloud fallback         < 1 s per LLM call     Demo-friendly
+
+Caveats
+    LLM latency dominates the turn time. Running the Opponent and
+    Critic in parallel cuts ~3-5 seconds off each turn.
+
+Optimization knobs (if needed)
+    - Use Groq instead of Ollama for opponent (fastest cloud option)
+    - Use smaller models for the Move Parser (phi-3-mini is sufficient)
+    - Stream the opponent response to the frontend token-by-token
+
+
+================================================================================
+15. TECH STACK SUMMARY
+================================================================================
+
+  Layer              Tool / Library                       Why
+  ------------------ ------------------------------------ ----------------------
+  RL environment     Gymnasium                            Standard RL interface
+  RL algorithm       Stable-Baselines3 (PPO)              Battle-tested, fast
+  Neural net         PyTorch (via SB3)                    Default SB3 backend
+  Backend            FastAPI                              Type-safe, async
+  Backend server     Uvicorn                              Standard ASGI server
+  Session store      Python dict (in-memory)              Sufficient for demo
+  LLM (primary)      Ollama (Llama 3.1 8B + Qwen 2.5 7B)  Free, local, private
+  LLM (fallback)     Gemini (free tier)                   Free, fast
+  Frontend framework Next.js 14 (App Router)              Modern React stack
+  UI library         Tailwind CSS + shadcn/ui             Speed + polish
+  Icons              lucide-react                          Clean, consistent
+  Speech-to-text     Web Speech API (browser-native)       Free, local, zero deps
+  Total cost         $0                                    Every layer free
+
+
+================================================================================
+16. REPOSITORY LAYOUT
+================================================================================
+
+    parleylab/
+    │
+    ├── backend/
+    │   ├── main.py                  FastAPI app entry
+    │   ├── api/
+    │   │   ├── session.py           Session endpoints
+    │   │   └── health.py            Health endpoints
+    │   ├── core/
+    │   │   ├── state.py             SessionState dataclass + serializers
+    │   │   ├── orchestrator.py      Per-turn pipeline coordinator
+    │   │   └── scenarios.py         Scenario loader
+    │   ├── agents/
+    │   │   ├── move_parser.py       LLM move parser
+    │   │   ├── opponent.py          LLM opponent agent
+    │   │   └── critic.py            LLM critic agent
+    │   ├── rl/
+    │   │   └── policy.py            PPO model loader + inference wrapper
+    │   ├── llm/
+    │   │   ├── base.py              LLMClient interface
+    │   │   ├── ollama.py            Ollama implementation
+    │   │   └── gemini.py            Gemini implementation
+    │   └── models/
+    │       └── best_model.zip       Trained PPO weights (~150 KB)
+    │
+    ├── frontend/
+    │   ├── app/
+    │   │   ├── page.tsx             Scenario selection
+    │   │   ├── negotiation/[id]/    Live negotiation screen
+    │   │   └── results/[id]/        End-of-session reveal
+    │   ├── components/
+    │   │   ├── ScenarioCard.tsx
+    │   │   ├── ChatMessage.tsx
+    │   │   ├── CriticPanel.tsx
+    │   │   ├── RoleBrief.tsx
+    │   │   ├── InputBox.tsx              Text field + mic combined
+    │   │   ├── MicButton.tsx             Push-to-talk control
+    │   │   └── PerformanceScore.tsx
+    │   ├── hooks/
+    │   │   └── useSpeechRecognition.ts   Web Speech API wrapper
+    │   ├── lib/
+    │   │   └── api.ts               Typed FastAPI client
+    │   └── package.json
+    │
+    ├── training/
+    │   ├── train.py                 PPO training script
+    │   ├── env.py                   NegotiationEnv definition
+    │   └── eval.py                  Evaluation script
+    │
+    ├── scenarios/
+    │   ├── salary_v1.json
+    │   ├── freelance_v1.json
+    │   ├── rent_v1.json
+    │   └── equity_v1.json
+    │
+    ├── docs/
+    │   ├── system_architecture.txt  This document
+    │   └── pitch_deck.pdf
+    │
+    ├── .env.example                 Template for API keys
+    ├── .gitignore
+    ├── requirements.txt             Python deps (backend + training)
+    └── README.md
+
+
+================================================================================
+17. GLOSSARY
+================================================================================
+
+  BATNA
+    Best Alternative To a Negotiated Agreement. The walk-away point.
+    The price below (or above) which a party prefers no deal at all.
+
+  ZOPA
+    Zone Of Possible Agreement. The range of values where both parties
+    would accept a deal — i.e., where the buyer's max overlaps the
+    seller's min.
+
+  Anchoring
+    The negotiation tactic of stating the first number to bias the
+    subsequent discussion. First numbers heavily influence final
+    outcomes.
+
+  Concession pacing
+    The strategy around how quickly to give ground. Conceding too fast
+    signals weakness; conceding too slowly risks deadlock.
+
+  Reciprocity signaling
+    Implicit communication that you expect the other side to move when
+    you do. Skilled negotiators use it to extract concessions.
+
+  PPO
+    Proximal Policy Optimization. A reinforcement learning algorithm
+    that updates a policy network in small, clipped steps to remain
+    stable during training. Industry standard. Same family used in
+    RLHF for LLMs.
+
+  Policy
+    In RL, the function that maps an observed state to an action.
+    For ParleyLab, the policy is the trained neural net deciding
+    Hold / Concede / Bluff / Walk.
+
+  Hidden state
+    Information the opponent has that the user does not. In ParleyLab,
+    this is the opponent's target, BATNA, persona, and urgency.
+
+  Move primitive
+    The structured representation of a user's negotiation move:
+    anchor, counteroffer, concession, signal, bluff, walk.
+
+  Web Speech API
+    A browser-native JavaScript API for speech recognition (STT) and
+    speech synthesis (TTS). Available in Chrome, Edge, and Safari.
+    Used by ParleyLab for client-side voice transcription with zero
+    server cost and no extra dependencies.
+
+  Push-to-talk
+    A voice input pattern where the user explicitly starts and stops
+    recording with a button. Preferred over always-on listening
+    because it avoids accidental captures and gives the user control
+    over what gets transcribed.
+
+================================================================================
+                                  END OF DOCUMENT
+================================================================================
