@@ -47,7 +47,7 @@ class OllamaClient(LLMClient):
         self,
         model: str | None = None,
         base_url: str | None = None,
-        timeout: float = 60.0,
+        timeout: float | None = None,
     ) -> None:
         self.model = model or os.getenv(
             "PARLEYLAB_OLLAMA_MODEL_DEFAULT", "llama3.1:8b"
@@ -55,7 +55,10 @@ class OllamaClient(LLMClient):
         self.base_url = (
             base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         ).rstrip("/")
-        self.timeout = timeout
+        self.timeout = (
+            timeout if timeout is not None
+            else float(os.getenv("PARLEYLAB_OLLAMA_TIMEOUT", "60"))
+        )
         self._session = requests.Session()
 
     def chat(

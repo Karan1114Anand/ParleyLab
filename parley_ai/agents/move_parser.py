@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -75,6 +76,15 @@ Output: {"primary_move": "counteroffer", "offered_value": 92000, "signals": ["co
 
 Input: "I'm walking away if you can't improve by end of day."
 Output: {"primary_move": "walk_away", "offered_value": null, "signals": ["time_pressure"], "tone": "aggressive"}
+
+Input: "I was thinking somewhere in the high 80s."
+Output: {"primary_move": "opening_anchor", "offered_value": 88000, "signals": [], "tone": "collaborative"}
+
+Input: "I'd take 90K with 25 days PTO — offered_value is the salary number only."
+Output: {"primary_move": "counteroffer", "offered_value": 90000, "signals": ["bundled_demand"], "tone": "collaborative"}
+
+Input: "100K or I walk — that's my final number."
+Output: {"primary_move": "bluff", "offered_value": 100000, "signals": [], "tone": "aggressive"}
 """
 
 # ---------------------------------------------------------------------------
@@ -144,11 +154,18 @@ def parse_move(
             ctx.append({"role": "assistant", "content": content})
     ctx.append({"role": "user", "content": user_message})
 
+    _t0 = time.perf_counter()
     raw = llm.chat(
         system=SYSTEM_PROMPT,
         messages=ctx,
         json_mode=True,
         temperature=0.2,
+    )
+    log.info(
+        "move_parser: provider=%s model=%s latency=%.2fs",
+        getattr(llm, "provider", "unknown"),
+        getattr(getattr(llm, "_client", None), "model", "unknown"),
+        time.perf_counter() - _t0,
     )
 
     try:

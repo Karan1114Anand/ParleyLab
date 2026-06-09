@@ -31,3 +31,11 @@ Thumbs.db
 # ParleyLab specific
 WORKGRAPH.md
 scratch/
+.venv
+# Training artifacts — keep best_model.zip and model_metadata.json, exclude checkpoints
+models/negotiation_ppo_*.zip
+models/negotiation_agent_final.zip
+logs/
+training/logs/
+**/__pycache__/
+*.pyc

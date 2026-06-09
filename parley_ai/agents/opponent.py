@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,10 +20,10 @@ You are playing the role of a negotiation counterpart. Your character: {persona}
 Your urgency level is {urgency}.
 
 Your strategic move for this turn is: **{action_name}**
-
+{offer_line}
 How to execute each move:
 - Hold Firm: Politely decline to move from your current position. Give a brief, confident \
-reason without revealing any specific private numbers.
+reason without revealing any private threshold numbers.
 - Concede Small: Nudge very slightly toward their position. Frame it as a reluctant \
 stretch — something you're doing to keep talks alive, not because you're comfortable.
 - Concede Large: Move meaningfully toward their position. Frame it explicitly as a \
@@ -34,7 +35,8 @@ Do NOT state your actual walk-away threshold.
 Rules:
 - Reply in 1–3 sentences only. Verbose opponents are annoying.
 - Stay fully in character. No meta-commentary, no stage directions.
-- NEVER mention your target value, walk-away threshold, or any other private numbers.
+- NEVER mention your target value or walk-away threshold.
+- If you have a current offer to state, include it naturally in your reply.
 - Output only your spoken reply — no JSON, no "Opponent says:" prefix, no labels.
 - Let your persona shape the vocabulary and register throughout.
 """
@@ -65,6 +67,27 @@ _FALLBACK_TEMPLATES: dict[str, str] = {
         "terms that work for both sides — I'm going to have to step away."
     ),
 }
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _build_fallback(action_name: str, current_offer: float | None, value_unit: str) -> str:
+    """Build a fallback reply that embeds the specific offer number when available."""
+    if current_offer is not None and action_name in ("Concede Small", "Concede Large"):
+        offer_str = f"{int(current_offer):,} {value_unit}".strip()
+        if action_name == "Concede Small":
+            return (
+                f"I've looked at what's possible and I can stretch to {offer_str} — "
+                "that's a real push for us, but I want to keep talks alive."
+            )
+        else:
+            return (
+                f"You've made a strong case, and as a one-time gesture I'll go to {offer_str}. "
+                "I can't go further — this is genuinely the ceiling."
+            )
+    return _FALLBACK_TEMPLATES.get(action_name, _FALLBACK_TEMPLATES["Hold Firm"])
+
 
 # ---------------------------------------------------------------------------
 # Public function
@@ -107,6 +130,26 @@ def generate_opponent_response(
     action_name = action.get("action_name", "Hold Firm")
     persona = hidden_context.get("persona", "Professional negotiator")
     urgency = hidden_context.get("urgency", "Moderate")
+    user_name = hidden_context.get("user_name", "")
+
+    # Optional: include the specific numeric offer when the orchestrator provides it
+    current_offer = hidden_context.get("current_offer")
+    value_unit = hidden_context.get("value_unit", "")
+    if current_offer is not None:
+        offer_line = (
+            f"REQUIRED: You MUST state the specific number "
+            f"{int(current_offer):,} {value_unit} in your reply — do not omit it.\n"
+        )
+    else:
+        offer_line = ""
+
+    # If user name is provided, instruct the LLM to use it
+    name_line = ""
+    if user_name:
+        name_line = (
+            f"The person you are negotiating with is named {user_name}. "
+            f"Address them by name naturally in your reply.\n"
+        )
 
     if llm is None:
         import os
@@ -117,7 +160,11 @@ def generate_opponent_response(
         persona=persona,
         urgency=urgency,
         action_name=action_name,
+        offer_line=offer_line,
     )
+    # Append name instruction after the main template
+    if name_line:
+        system += "\n" + name_line
 
     # Build conversation context: up to the last 4 history entries (≈2 full turns).
     # history[-4:] includes the current user turn when it is the final entry,
@@ -137,11 +184,19 @@ def generate_opponent_response(
         messages.append({"role": "user", "content": "I'd like to discuss the terms."})
 
     try:
+        _t0 = time.perf_counter()
         reply = llm.chat(
             system=system,
             messages=messages,
             json_mode=False,
             temperature=0.7,
+        )
+        log.info(
+            "opponent: provider=%s model=%s action=%s latency=%.2fs",
+            getattr(llm, "provider", "unknown"),
+            getattr(getattr(llm, "_client", None), "model", "unknown"),
+            action_name,
+            time.perf_counter() - _t0,
         )
         return reply.strip()
     except Exception as exc:
@@ -149,4 +204,4 @@ def generate_opponent_response(
             "Opponent agent: LLM call failed (%s) — using fallback template.",
             exc,
         )
-        return _FALLBACK_TEMPLATES.get(action_name, _FALLBACK_TEMPLATES["Hold Firm"])
+        return _build_fallback(action_name, current_offer, value_unit)

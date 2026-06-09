@@ -18,8 +18,17 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 
-# ── Load .env from project root (one level above backend/) ────────────────────
+# ── Ensure the project root is on sys.path so `import parley_ai` resolves ─────
+# backend/ is the working directory when uvicorn runs, so the root parley_ai/
+# package would otherwise be invisible. This must happen before any parley_ai
+# imports elsewhere in the process.
+import sys
 _here = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.join(_here, "..")
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+# ── Load .env from project root (one level above backend/) ────────────────────
 load_dotenv(dotenv_path=os.path.join(_here, "..", ".env"))
 
 # ── FastAPI + middleware imports (after env is loaded) ────────────────────────
@@ -36,6 +45,7 @@ from api.health import router as health_router
 from api.session import router as session_router      # legacy /session/* routes kept for backward compat
 from api.scenario import router as scenario_router    # new /api/scenario/*
 from api.chat import router as chat_router            # new /api/chat/*
+from api.status import router as status_router        # new /api/status/*
 
 from core.orchestrator import init_singletons, get_llm_provider
 from schemas.responses import ErrorResponse, ErrorDetail
@@ -106,6 +116,10 @@ _ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
+    "http://localhost:3002",
+    "http://127.0.0.1:3002",
+    "http://localhost:3003",
+    "http://127.0.0.1:3003",
     # Add your production domain here, e.g.:
     # "https://parleylab.vercel.app",
 ]
@@ -250,6 +264,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 # v2 routes (new canonical paths)
 app.include_router(scenario_router)   # /api/scenario/*
 app.include_router(chat_router)       # /api/chat/*
+app.include_router(status_router)     # /api/status/*
 
 # v1 routes (backward compat — legacy session endpoints)
 app.include_router(session_router)    # /session/*

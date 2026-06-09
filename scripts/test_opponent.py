@@ -15,6 +15,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Point the opponent at the locally available model (llama3.1:8b may not be pulled).
+os.environ.setdefault("PARLEYLAB_LLM_PROVIDER", "ollama")
 os.environ.setdefault("PARLEYLAB_OPPONENT_MODEL", "phi3:latest")
 
 from parley_ai import generate_opponent_response

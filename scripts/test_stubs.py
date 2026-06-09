@@ -145,9 +145,9 @@ check("returns non-empty str",            isinstance(response, str) and response
 
 try:
     generate_opponent_response({"no_name": True}, HIDDEN_CONTEXT, HISTORY, parsed_move)
-    check("raises KeyError on missing action_name", False, "no exception raised")
-except KeyError:
-    check("raises KeyError on missing action_name", True)
+    check("raises ValueError on missing action_name", False, "no exception raised")
+except (ValueError, KeyError):
+    check("raises ValueError on missing action_name", True)
 
 try:
     generate_opponent_response("bad", HIDDEN_CONTEXT, HISTORY, parsed_move)

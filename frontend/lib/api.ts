@@ -107,6 +107,29 @@ export interface HealthResponse {
   llm_provider:    string;
 }
 
+export interface LlmProviderStats {
+  requests:  number;
+  successes: number;
+  errors:    number;
+  rate_limits?: number;
+}
+
+export interface LlmEvent {
+  ts:       string;
+  provider: string;
+  event:    string;
+  detail:   string;
+}
+
+export interface LlmStatus {
+  current_provider:  string;
+  is_using_fallback: boolean;
+  fallback_count:    number;
+  gemini:            LlmProviderStats & { rate_limits: number };
+  ollama:            LlmProviderStats;
+  recent_events:     LlmEvent[];
+}
+
 /** Standard error envelope from the backend */
 export interface ApiError {
   error:  string;
@@ -176,6 +199,11 @@ export async function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>('/healthz');
 }
 
+/** Get live LLM provider usage stats (Gemini + Ollama counters, event log). */
+export async function getLlmStatus(): Promise<LlmStatus> {
+  return request<LlmStatus>('/api/status/llm');
+}
+
 /**
  * List all available negotiation scenarios.
  * Returns the flat array for backward compat with existing components.
@@ -193,10 +221,12 @@ export async function listScenarios(): Promise<ScenarioSummary[]> {
  */
 export async function startSession(
   scenario_id: string,
+  user_name?: string,
+  currency?: string,
 ): Promise<StartSessionResponse> {
   return request<StartSessionResponse>('/api/scenario/start', {
     method: 'POST',
-    body: JSON.stringify({ scenario_id }),
+    body: JSON.stringify({ scenario_id, user_name, currency }),
   });
 }
 

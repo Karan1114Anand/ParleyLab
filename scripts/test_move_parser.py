@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Default to a model that is pulled locally; override via env for production.
+os.environ.setdefault("PARLEYLAB_LLM_PROVIDER", "ollama")
 os.environ.setdefault("PARLEYLAB_OLLAMA_MODEL_DEFAULT", "phi3:latest")
 
 import logging

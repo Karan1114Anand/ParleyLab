@@ -88,6 +88,9 @@ class SessionState:
     # Performance accumulator
     critic_feedbacks: List[Dict[str, Any]] = field(default_factory=list)
 
+    # User profile info
+    user_name: str = ""
+
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     def to_llm_history(self) -> List[Dict[str, str]]:

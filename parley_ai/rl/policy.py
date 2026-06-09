@@ -59,6 +59,11 @@ class StrategyPolicy:
 
         self._model = PPO.load(str(path), device="cpu")
 
+    @property
+    def is_loaded(self) -> bool:
+        """True when the PPO model is loaded and ready to serve predictions."""
+        return self._model is not None
+
     def predict(self, state_vector: list[float]) -> dict:
         """Run one forward pass and return the opponent's strategic action.
 

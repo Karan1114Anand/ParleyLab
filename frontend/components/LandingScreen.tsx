@@ -1,9 +1,12 @@
 'use client';
 
 import { listScenarios, ScenarioSummary } from '@/lib/api';
+import { getCountryByCode } from '@/lib/countries';
 import { ScenarioCard } from '@/components/ScenarioCard';
 import { useNegotiationStore } from '@/store/useNegotiationStore';
-import { Swords, Zap, ChevronDown } from 'lucide-react';
+import { useUserSettingsStore } from '@/store/useUserSettingsStore';
+import { Swords, Zap, ChevronDown, Settings, User } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 /**
@@ -16,8 +19,11 @@ export function LandingScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const selectScenario = useNegotiationStore((s) => s.selectScenario);
+  const { userName, countryCode, isConfigured } = useUserSettingsStore();
+  const country = getCountryByCode(countryCode);
 
   useEffect(() => {
     listScenarios()
@@ -103,14 +109,42 @@ export function LandingScreen() {
             ))}
           </div>
 
-          {/* CTA */}
-          <button
-            onClick={scrollToGrid}
-            className="btn-accent inline-flex items-center gap-2 px-8 py-4 rounded-2xl text-base font-semibold"
-          >
-            <Swords className="w-5 h-5" />
-            Choose Your Scenario
-          </button>
+          {/* CTA buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <button
+              onClick={scrollToGrid}
+              className="btn-accent inline-flex items-center gap-2 px-8 py-4 rounded-2xl text-base font-semibold"
+            >
+              <Swords className="w-5 h-5" />
+              Choose Your Scenario
+            </button>
+            <button
+              onClick={() => router.push('/settings')}
+              className="inline-flex items-center gap-2 px-6 py-4 rounded-2xl text-sm font-semibold
+                bg-white/[0.06] border border-white/[0.10] text-white/60
+                hover:bg-white/[0.10] hover:text-white/90 hover:border-white/[0.20]
+                transition-all duration-200"
+            >
+              <Settings className="w-4 h-4" />
+              {isConfigured ? 'Settings' : 'Set Up Profile'}
+            </button>
+          </div>
+
+          {/* User info badge */}
+          {isConfigured && userName && (
+            <div className="mt-6 inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/[0.04] border border-white/[0.08] animate-fade-up">
+              <User className="w-3.5 h-3.5 text-brand-400" />
+              <span className="text-xs text-white/50">
+                Playing as <span className="text-white/80 font-semibold">{userName}</span>
+              </span>
+              {country && (
+                <span className="text-base">{country.flag}</span>
+              )}
+              {country && (
+                <span className="text-[10px] text-white/30 font-mono">{country.currency}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Scroll hint */}

@@ -1,7 +1,9 @@
 'use client';
 
 import { startSession } from '@/lib/api';
+import { getCountryByCode } from '@/lib/countries';
 import { useNegotiationStore, getAccent } from '@/store/useNegotiationStore';
+import { useUserSettingsStore } from '@/store/useUserSettingsStore';
 import { useTypewriter } from '@/hooks/useTypewriter';
 import {
   ArrowLeft, ArrowRight, Bot, Shield, Swords,
@@ -23,6 +25,7 @@ import { useState, useEffect } from 'react';
 export function RoleBriefScreen() {
   const router = useRouter();
   const { selectedScenario, setSession, goToLanding, phase } = useNegotiationStore();
+  const { userName, countryCode, isConfigured } = useUserSettingsStore();
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +40,8 @@ export function RoleBriefScreen() {
   }
 
   const accent = getAccent(selectedScenario.id);
+  const country = getCountryByCode(countryCode);
+  const currency = country?.currency ?? 'USD';
 
   // Typewriter on the scenario description
   const { visible: typedDescription } = useTypewriter(
@@ -49,7 +54,11 @@ export function RoleBriefScreen() {
     setStarting(true);
     setError(null);
     try {
-      const info = await startSession(selectedScenario.id);
+      const info = await startSession(
+        selectedScenario.id,
+        userName || undefined,
+        currency,
+      );
       // Store in sessionStorage for the negotiation page
       sessionStorage.setItem(`session_${info.session_id}`, JSON.stringify(info));
       sessionStorage.setItem(`scenario_id_${info.session_id}`, selectedScenario.id);

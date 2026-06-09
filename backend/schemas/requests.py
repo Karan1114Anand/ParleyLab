@@ -6,6 +6,7 @@ Pydantic v2 is used throughout — FastAPI 0.111+ ships with it by default.
 """
 from __future__ import annotations
 
+from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -20,6 +21,18 @@ class StartScenarioRequest(BaseModel):
         pattern=r"^[a-z0-9_]+$",
         description="Scenario identifier, e.g. 'salary_v1'",
         examples=["salary_v1", "rent_v1", "freelance_v1", "equity_v1"],
+    )
+    user_name: Optional[str] = Field(
+        None,
+        max_length=50,
+        description="User's display name — the AI opponent will address them by this name.",
+        examples=["Klaus", "Priya", "Alex"],
+    )
+    currency: Optional[str] = Field(
+        None,
+        max_length=3,
+        description="ISO 4217 currency code based on user's country, e.g. 'INR', 'GBP'. Defaults to 'USD'.",
+        examples=["USD", "INR", "GBP", "EUR"],
     )
 
 

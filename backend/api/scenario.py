@@ -74,7 +74,11 @@ async def start_scenario(body: StartScenarioRequest) -> StartScenarioResponse:
     Returns the full session bootstrap payload the frontend stores in sessionStorage.
     """
     try:
-        result = start_session(body.scenario_id)
+        result = start_session(
+            body.scenario_id,
+            user_name=body.user_name,
+            currency=body.currency,
+        )
 
         return StartScenarioResponse(
             session_id=result["session_id"],

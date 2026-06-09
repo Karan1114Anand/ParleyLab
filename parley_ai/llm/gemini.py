@@ -57,11 +57,8 @@ class GeminiClient(LLMClient):
     ) -> None:
         self.model = model or _DEFAULT_MODEL
         self._api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not self._api_key:
-            raise ValueError(
-                "GEMINI_API_KEY must be set in the environment or passed "
-                "as the api_key constructor argument."
-            )
+        # Key validation is deferred to chat() so that construction never raises —
+        # this lets the fallback chain in __init__.py catch ConnectionError cleanly.
         self.timeout = timeout
         self._session = requests.Session()
 
@@ -97,6 +94,12 @@ class GeminiClient(LLMClient):
             RuntimeError: If Gemini returns a non-2xx response, a safety
                 block, or an unexpected response structure.
         """
+        if not self._api_key:
+            raise ConnectionError(
+                "GEMINI_API_KEY is not set. Add it to your .env file: "
+                "GEMINI_API_KEY=your-key-here"
+            )
+
         for m in messages:
             if m.get("role") not in _VALID_ROLES:
                 raise ValueError(
@@ -142,6 +145,13 @@ class GeminiClient(LLMClient):
             ) from exc
 
         if not response.ok:
+            # 429 (rate limit), 401/403 (auth), 5xx (server) → ConnectionError
+            # so the pipeline fallbacks can catch them cleanly.
+            if response.status_code in (429, 401, 403) or response.status_code >= 500:
+                raise ConnectionError(
+                    f"Gemini unavailable (HTTP {response.status_code}): "
+                    f"{response.text[:120]}"
+                )
             raise RuntimeError(
                 f"Gemini returned HTTP {response.status_code}: {response.text[:200]}"
             )
