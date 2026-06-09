@@ -1,0 +1,22 @@
+{
+  "id": "equity_v1",
+  "display_name": "Equity Split",
+  "user_role": "Technical Co-Founder",
+  "opponent_role": "Business Co-Founder",
+  "icon": "📊",
+  "description": "Negotiate your equity share with your co-founder before the seed round closes. The cap table needs to be locked in 48 hours.",
+  "user_brief": {
+    "target": 55,
+    "batna": 45,
+    "context": "You're the technical co-founder who built the MVP and holds the core IP. Your target is 55% equity. Your walk-away point is 45% — below that you'd rather bring in an outside CTO."
+  },
+  "opponent_hidden": {
+    "target": 50,
+    "batna": 40,
+    "persona": "Friendly and vision-driven. References the shared upside of 50/50 as a sign of equal partnership. Will use investor optics ('VCs prefer balanced cap tables') as a tactical anchor.",
+    "urgency": "Moderate — investors want to see the cap table finalized before the seed term sheet expires in 48 hours."
+  },
+  "opening_offer": 40,
+  "max_turns": 10,
+  "value_unit": "% equity"
+}

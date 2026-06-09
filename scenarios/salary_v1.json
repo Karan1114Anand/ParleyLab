@@ -1,0 +1,22 @@
+{
+  "id": "salary_v1",
+  "display_name": "Salary Negotiation",
+  "user_role": "Candidate",
+  "opponent_role": "Hiring Manager",
+  "icon": "💼",
+  "description": "Negotiate your starting salary with a budget-conscious hiring manager who needs to fill the role.",
+  "user_brief": {
+    "target": 95000,
+    "batna": 80000,
+    "context": "You have a competing offer at $85K and 2 days to decide. Your target is $95K based on market data and your 5 years of experience."
+  },
+  "opponent_hidden": {
+    "target": 82000,
+    "batna": 90000,
+    "persona": "Polite but budget-constrained. Uses corporate language. References 'compensation bands' and 'internal equity'. Never bluffs — but won't volunteer budget headroom.",
+    "urgency": "Moderate — the role has been open for 6 weeks and the team is stretched. Needs to close before end of quarter."
+  },
+  "opening_offer": 78000,
+  "max_turns": 10,
+  "value_unit": "USD per year"
+}

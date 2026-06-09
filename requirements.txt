@@ -4,17 +4,18 @@ stable-baselines3==2.3.2
 torch==2.3.1                  # PPO backend; CPU version is fine for this project
 numpy==1.26.4
 
-# ── LLM (opponent language + critic) ─────────────────────────────────────────
-anthropic==0.28.0             # Claude API  — or swap for openai if preferred
-openai==1.35.0                # optional; comment out if using Claude only
+# ── LLM ───────────────────────────────────────────────────────────────────────
+google-generativeai==0.7.2    # Gemini API (primary LLM provider)
+anthropic==0.28.0             # Claude API — optional fallback
+openai==1.35.0                # optional; comment out if not needed
 
 # ── Web app ───────────────────────────────────────────────────────────────────
-streamlit==1.36.0
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
+httpx==0.27.0                 # async HTTP for Ollama fallback
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
-python-dotenv==1.0.1          # load ANTHROPIC_API_KEY from .env
+python-dotenv==1.0.1          # load GEMINI_API_KEY / ANTHROPIC_API_KEY from .env
 pydantic==2.7.4               # request/response validation in FastAPI
 rich==13.7.1                  # pretty terminal output during training
 tensorboard==2.17.0           # optional: visualise training curves

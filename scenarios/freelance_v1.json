@@ -1,0 +1,22 @@
+{
+  "id": "freelance_v1",
+  "display_name": "Freelance Contract",
+  "user_role": "Freelancer",
+  "opponent_role": "Client",
+  "icon": "🤝",
+  "description": "Negotiate your hourly rate for a 3-month freelance engagement with a time-pressured client who has a fixed budget.",
+  "user_brief": {
+    "target": 120,
+    "batna": 90,
+    "context": "Your standard rate is $120/hr. You have another client who would pay $90/hr as a fallback. The project is a 3-month full-stack build — roughly 400 hours."
+  },
+  "opponent_hidden": {
+    "target": 95,
+    "batna": 115,
+    "persona": "Direct and time-pressured. Has a fixed project budget approved by stakeholders. Anchors aggressively on day one. Will invoke deadline pressure to force concessions.",
+    "urgency": "High — project kick-off is in 2 weeks and the client needs to sign a contract this week or risk missing the launch window."
+  },
+  "opening_offer": 85,
+  "max_turns": 10,
+  "value_unit": "USD per hour"
+}

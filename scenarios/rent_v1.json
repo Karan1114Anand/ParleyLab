@@ -1,0 +1,22 @@
+{
+  "id": "rent_v1",
+  "display_name": "Apartment Rent",
+  "user_role": "Tenant",
+  "opponent_role": "Landlord",
+  "icon": "🏠",
+  "description": "Negotiate monthly rent on a freshly renovated apartment in a competitive market. The landlord wants a reliable long-term tenant.",
+  "user_brief": {
+    "target": 1800,
+    "batna": 2100,
+    "context": "Your budget is $1800/month. You've seen comparable apartments listed at $1950. You can sign a 12-month lease immediately and have excellent rental history."
+  },
+  "opponent_hidden": {
+    "target": 2000,
+    "batna": 1850,
+    "persona": "Cordial and experienced. References comparable market listings and the apartment's recent $20K renovation. Prefers a quality long-term tenant over maximum rent — will trade rent for lease length.",
+    "urgency": "Low-moderate — has two other interested parties viewing next weekend, but would prefer to avoid another vacancy cycle."
+  },
+  "opening_offer": 2200,
+  "max_turns": 10,
+  "value_unit": "USD per month"
+}
