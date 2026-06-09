@@ -1,0 +1,652 @@
+================================================================================
+        CLAUDE CODE PROMPTS — KARAN'S AI/ML TASKS FOR PARLEYLAB
+                          Team: Hell's Kitchen
+================================================================================
+
+HOW TO USE THIS DOCUMENT
+========================
+- Open each task in a SEPARATE Claude Code session.
+- Paste the SHARED PROJECT CONTEXT block once at the start of every session
+  before pasting the task prompt. This avoids retyping context and keeps
+  token usage low.
+- After each task, run the validation command shown to confirm it works
+  before moving to the next.
+- Tasks are designed to be independent. Task 4 doesn't need Task 5 done
+  yet — you can iterate on any task without breaking earlier ones.
+
+================================================================================
+SHARED PROJECT CONTEXT  (paste once at the start of every Claude Code session)
+================================================================================
+
+I'm building ParleyLab — an AI negotiation simulator. I own the AI/ML
+layer; my teammate owns FastAPI + Next.js. I ship a Python package called
+`parley_ai` that he imports into his FastAPI app.
+
+PROJECT STRUCTURE I'M BUILDING:
+
+  parley_ai/
+  ├── __init__.py              # Public interface (5 functions exposed)
+  ├── llm/
+  │   ├── base.py              # LLMClient abstract interface
+  │   ├── ollama.py            # Ollama implementation
+  │   ├── gemini.py            # Gemini fallback implementation
+  │   └── router.py            # Fallback chain
+  ├── rl/
+  │   └── policy.py            # PPO policy loader + inference
+  ├── agents/
+  │   ├── move_parser.py       # User text → structured move
+  │   ├── opponent.py          # Strategic action → natural language
+  │   └── critic.py            # User move → structured critique
+  ├── scoring.py               # End-of-session performance score
+  └── eval.py                  # End-to-end pipeline test
+
+CONSTRAINTS — APPLIES TO EVERY TASK:
+- Pure Python. No FastAPI, no Flask, no HTTP servers. I expose only Python
+  functions and classes.
+- No React, no UI, no Streamlit. UI is my teammate's responsibility.
+- I have a trained PPO model at `models/best_model.zip` (Stable-Baselines3,
+  PPO algorithm, MLP policy). Action space: Discrete(5) — 0=Hold, 1=Concede
+  Small, 2=Concede Large, 3=Bluff, 4=Walk Away. State space: 7-dim
+  normalized vector.
+- LLM stack: Ollama (local, primary). Gemini is a future fallback only
+  if Ollama proves insufficient. Do not implement Groq anywhere.
+- Every function must work standalone — testable with a single Python
+  script, no service spin-up needed.
+- Type hints on all public functions.
+- Docstrings explain what the function does, what it returns, and what
+  errors it raises.
+
+LIBRARIES AVAILABLE:
+- stable-baselines3, gymnasium, numpy, torch (for RL)
+- requests, httpx (for LLM HTTP calls)
+- pydantic (for structured I/O validation)
+- python-dotenv (for API keys)
+
+ASK BEFORE ASSUMING:
+If anything about my project is ambiguous, ASK before making assumptions.
+Don't invent endpoints, models, or behaviors I haven't specified.
+
+
+================================================================================
+                              TASK 1 OF 10
+            Package scaffold + Day 0 stub interface
+================================================================================
+
+GOAL
+Create the parley_ai package skeleton with stub functions that return
+realistic fake data. This unblocks Taanush immediately — he can import
+parley_ai and build his FastAPI orchestrator while I implement the real
+agents in later tasks.
+
+DELIVERABLES
+1. parley_ai/__init__.py with 5 stub functions, type-hinted, fully
+   documented with docstrings explaining inputs, outputs, and raises.
+2. A scripts/test_stubs.py that imports each function, calls it with
+   realistic inputs, prints the output, and verifies the return types
+   match the docstrings.
+3. A short README.md at the package root explaining what each function
+   does and what it's used for.
+
+THE 5 FUNCTIONS (exact signatures — do not change these)
+
+  def parse_move(user_message: str, history: list[dict]) -> dict:
+      """Returns: {primary_move: str, offered_value: float | None,
+                   signals: list[str], tone: str}"""
+
+  def get_strategic_action(state_vector: list[float]) -> dict:
+      """Returns: {action_id: int (0-4), action_name: str,
+                   description: str}"""
+
+  def generate_opponent_response(
+      action: dict, hidden_context: dict,
+      history: list[dict], parsed_user_move: dict
+  ) -> str:
+      """Returns: natural language opponent reply as a single string."""
+
+  def get_critic_feedback(
+      parsed_user_move: dict, history: list[dict]
+  ) -> dict:
+      """Returns: {strengths: list[str], weaknesses: list[str],
+                   suggestion: str, concept_tag: str}"""
+
+  def score_session(history: list[dict]) -> dict:
+      """Returns: {score: int (0-100), rating: str,
+                   best_move: dict, worst_move: dict}"""
+
+STUB BEHAVIOR
+- Return realistic fake data. For example, parse_move should return a
+  plausible counteroffer with believable signals, not None or empty.
+- Variety in stubs is good — get_strategic_action can pick a random
+  action_id each call so testing feels alive.
+
+DO NOT
+- Do not implement the real LLM calls. That's Task 4-6.
+- Do not load the RL model. That's Task 2.
+- Do not add FastAPI, Flask, or any web framework.
+
+WHEN DONE
+Run: python scripts/test_stubs.py
+Expected: each function prints a valid output without errors.
+
+
+================================================================================
+                              TASK 2 OF 10
+              RL policy loader + inference wrapper
+================================================================================
+
+GOAL
+Replace the get_strategic_action stub with a real wrapper around the
+trained PPO model at models/best_model.zip.
+
+DELIVERABLES
+1. parley_ai/rl/policy.py with:
+   - A class StrategyPolicy that loads the PPO model once at init.
+   - A method .predict(state_vector: list[float]) -> dict returning
+     {action_id, action_name, description}.
+   - Action map (id → name + description) defined as a module-level
+     constant.
+2. Update parley_ai/__init__.py so get_strategic_action uses
+   StrategyPolicy. The model should be loaded LAZILY on first call,
+   then cached as a module-level singleton — no expensive load at
+   import time.
+3. scripts/test_rl_policy.py that calls get_strategic_action with 5
+   different state vectors and prints the chosen action for each.
+
+ACTION MAP (use these exact strings)
+  0  Hold Firm        "Opponent maintains their position."
+  1  Concede Small    "Opponent moves slightly toward your offer."
+  2  Concede Large    "Opponent makes a significant concession."
+  3  Bluff            "Opponent moves away from your offer — testing
+                       your resolve."
+  4  Walk Away        "Opponent walks away from the negotiation."
+
+STATE VECTOR FORMAT (7-dim normalized to [0, 1])
+  [0]  own_offer_norm
+  [1]  opponent_offer_norm
+  [2]  turn_norm
+  [3]  own_concession_rate
+  [4]  opponent_concession_rate
+  [5]  gap_norm
+  [6]  turns_since_last_concession_norm
+
+USE deterministic=True for PPO prediction. We want consistent behavior
+during a demo, not stochastic surprises.
+
+DO NOT
+- Do not retrain the model. It exists at models/best_model.zip.
+- Do not change the state vector dimensions.
+- Do not add HTTP wrappers.
+
+WHEN DONE
+Run: python scripts/test_rl_policy.py
+Expected: 5 lines printed, each showing a different state and the chosen
+action. Diverse actions should appear across different states.
+
+
+================================================================================
+                              TASK 3 OF 10
+              LLM abstraction layer (Ollama primary, Gemini fallback)
+================================================================================
+
+GOAL
+Build a clean LLMClient interface with two concrete implementations:
+Ollama (primary, used for the demo) and Gemini (future fallback only —
+implement it but it will not be used unless we explicitly switch).
+No Groq. The router defaults to Ollama only for now.
+
+DELIVERABLES
+1. parley_ai/llm/base.py — LLMClient abstract base class with method:
+
+   def chat(
+       self,
+       system: str,
+       messages: list[dict],
+       json_mode: bool = False,
+       temperature: float = 0.7,
+   ) -> str:
+       """messages format: [{role: 'user'|'assistant', content: str}]
+          json_mode: if True, return raw JSON string suitable for
+                     json.loads()
+          Returns: the assistant's reply as a string."""
+
+2. parley_ai/llm/ollama.py — OllamaClient (default base URL
+   http://localhost:11434, default model overridable per agent).
+   This is the only provider used for the demo.
+
+3. parley_ai/llm/gemini.py — GeminiClient using Google's free-tier
+   Gemini API. Reads GEMINI_API_KEY from environment. Build it but
+   it will sit unused until we decide to switch.
+
+4. parley_ai/llm/router.py — LLMRouter that defaults to Ollama only.
+   If Ollama is unreachable, log a clear error and raise — do NOT
+   silently fall back to Gemini without an explicit config change.
+   30-second timeout on Ollama calls.
+
+5. scripts/test_llm_clients.py — pings Ollama with "Say hello" and
+   prints the response. Also tests Gemini if GEMINI_API_KEY is set,
+   but marks it as "(future fallback — not used in demo)".
+
+ENV CONFIG (the user will put these in a .env file)
+  PARLEYLAB_LLM_PROVIDER=ollama         # only option for now
+  PARLEYLAB_OLLAMA_MODEL_DEFAULT=llama3.1:8b
+  OLLAMA_BASE_URL=http://localhost:11434
+  GEMINI_API_KEY=...                    # optional, future use only
+
+JSON MODE
+When json_mode=True:
+- For Ollama, set format='json' in the API call.
+- For Gemini (future), append "Reply ONLY with valid JSON, no preamble"
+  to the system prompt.
+- The function should return a raw JSON STRING. Parsing is the
+  caller's responsibility.
+
+DO NOT
+- Do not implement Groq. It is not part of this project.
+- Do not auto-fallback to Gemini. Ollama failure = clear error + log.
+- Do not call any agent code from here. This is pure infrastructure.
+- Do not log API keys.
+
+WHEN DONE
+Run: python scripts/test_llm_clients.py
+Expected: each available provider prints "Hello" or similar. Missing
+credentials cause that provider to be skipped with a clear message.
+
+
+================================================================================
+                              TASK 4 OF 10
+            Move Parser agent (LLM → structured JSON)
+================================================================================
+
+GOAL
+Convert free-form user negotiation text into structured negotiation
+primitives. This is the first real LLM agent.
+
+DELIVERABLES
+1. parley_ai/agents/move_parser.py with function:
+
+   def parse_move(
+       user_message: str,
+       history: list[dict],
+       llm: LLMRouter | None = None,
+   ) -> dict:
+
+   Returns dict with EXACT keys:
+     - primary_move: one of 'opening_anchor', 'counteroffer',
+                     'concession', 'bluff', 'walk_away', 'accept',
+                     'signal'
+     - offered_value: float or None (the numeric offer if present)
+     - signals: list of strings (e.g. 'competing_bid_disclosure',
+                'bundled_demand', 'time_pressure', 'reciprocity_request')
+     - tone: one of 'collaborative', 'firm', 'aggressive', 'desperate'
+
+2. A SYSTEM_PROMPT constant in the file explaining the agent's role and
+   the schema in clear terms.
+
+3. JSON output enforcement: use llm.chat(..., json_mode=True), then
+   json.loads(). If parsing fails, return a safe default dict and log
+   a warning — never crash the pipeline.
+
+4. Update parley_ai/__init__.py so the top-level parse_move() calls
+   this real implementation, but only if the LLM provider is available.
+   If no LLM provider can be reached, fall back to the Task 1 stub.
+
+5. scripts/test_move_parser.py — run 5 example messages through the
+   parser and print the structured output for each:
+     - "I appreciate the offer but I have a competing bid at 85K."
+     - "I can come down to 92K if you include relocation."
+     - "Take it or leave it — that's my final offer at 95K."
+     - "I'd really love to make this work, what can you do?"
+     - "I'm walking away from this."
+
+PROMPT ENGINEERING NOTES
+- The system prompt should give 2-3 worked examples of input → expected
+  JSON output.
+- temperature=0.2 (we want consistency, not creativity).
+- Keep the prompt under 500 tokens to control cost.
+
+DO NOT
+- Do not generate freeform commentary. The output MUST be valid JSON
+  matching the schema.
+- Do not infer the opponent's hidden state — this agent only sees the
+  user's text.
+
+WHEN DONE
+Run: python scripts/test_move_parser.py
+Expected: 5 structured outputs printed, each matching the schema and
+reflecting the actual content of the input message.
+
+
+================================================================================
+                              TASK 5 OF 10
+            Opponent Agent (RL action → natural language)
+================================================================================
+
+GOAL
+Generate the opponent's natural language reply given the strategic
+action chosen by the RL policy, plus the hidden context (persona,
+BATNA, target).
+
+DELIVERABLES
+1. parley_ai/agents/opponent.py with function:
+
+   def generate_opponent_response(
+       action: dict,                  # from get_strategic_action()
+       hidden_context: dict,          # {target, batna, persona, urgency}
+       history: list[dict],           # full conversation so far
+       parsed_user_move: dict,        # from parse_move()
+       llm: LLMRouter | None = None,
+   ) -> str:
+
+   Returns: a single string — the opponent's reply.
+
+2. A PERSONA_SYSTEM_PROMPT_TEMPLATE that takes the persona description
+   from hidden_context and weaves it into the system prompt. Different
+   personas should produce visibly different tone (e.g. "Polite but
+   budget-constrained HM" vs "Direct, time-pressured client").
+
+3. Action handling: the prompt must instruct the LLM to behave
+   according to the chosen action:
+     - Hold Firm: politely refuse to move, offer a justification
+     - Concede Small: move slightly, frame it as a stretch
+     - Concede Large: move significantly, frame it as a one-time gesture
+     - Bluff: refuse and counter with a slightly worse offer
+     - Walk Away: politely end the negotiation
+
+4. Update parley_ai/__init__.py to wire up the top-level
+   generate_opponent_response() to this implementation.
+
+5. scripts/test_opponent.py — run 5 turns with varying actions and
+   personas, print the opponent's reply for each.
+
+PROMPT ENGINEERING NOTES
+- temperature=0.7 (we want natural variation in language).
+- Keep responses to 1-3 sentences. Verbose opponents are annoying.
+- The opponent's hidden target/BATNA should NEVER appear in the
+  response text. The LLM only uses them to inform its tone, not to
+  state numbers it shouldn't know.
+- Include 1-2 conversation turns of history if available, to maintain
+  coherence.
+
+DO NOT
+- Do not output anything other than the opponent's reply. No JSON,
+  no labels, no "Opponent says:" prefix.
+- Do not break character to comment on the negotiation.
+
+WHEN DONE
+Run: python scripts/test_opponent.py
+Expected: 5 distinct opponent replies showing clear differences based
+on action + persona.
+
+
+================================================================================
+                              TASK 6 OF 10
+            Critic Agent (user move → structured critique)
+================================================================================
+
+GOAL
+Evaluate the user's most recent move against negotiation theory and
+return structured feedback. The critic must NOT see the opponent's
+hidden state — only the user's behavior is judged.
+
+DELIVERABLES
+1. parley_ai/agents/critic.py with function:
+
+   def get_critic_feedback(
+       parsed_user_move: dict,        # from parse_move()
+       history: list[dict],           # full conversation so far
+       llm: LLMRouter | None = None,
+   ) -> dict:
+
+   Returns dict with EXACT keys:
+     - strengths: list of strings (1-3 items)
+     - weaknesses: list of strings (1-3 items)
+     - suggestion: string (one actionable tip)
+     - concept_tag: one of 'anchoring', 'concession_pacing',
+                    'batna_signaling', 'reciprocity', 'information_disclosure',
+                    'framing', 'walk_away_credibility'
+
+2. A NEGOTIATION_THEORY_RUBRIC constant included in the system prompt
+   covering: BATNA awareness, anchoring, concession pacing, reciprocity
+   signaling, and information disclosure discipline.
+
+3. JSON output enforcement (same as Move Parser). Safe default on
+   parse failure.
+
+4. Update parley_ai/__init__.py to wire up the top-level function.
+
+5. scripts/test_critic.py — run 5 example user moves through the critic
+   and print the structured feedback for each. Use the same examples
+   as the Move Parser test for consistency.
+
+PROMPT ENGINEERING NOTES
+- temperature=0.3 (we want grounded, consistent critique).
+- The prompt must explicitly forbid the critic from referencing the
+  opponent's hidden state, BATNA, or strategy.
+- Strengths and weaknesses must reference SPECIFIC moves the user made,
+  not generic platitudes ("you should be confident" is forbidden).
+- The suggestion field must be actionable in the next turn.
+
+DO NOT
+- Do not access hidden_context. The critic must not receive it.
+- Do not output anything other than the JSON object.
+
+WHEN DONE
+Run: python scripts/test_critic.py
+Expected: 5 structured feedback objects, each tied specifically to the
+move it evaluates, no generic advice.
+
+
+================================================================================
+                              TASK 7 OF 10
+                   Performance scorer (end-of-session)
+================================================================================
+
+GOAL
+At the end of a negotiation, compute an overall performance score for
+the user, identify their best and worst moves, and produce a qualitative
+rating.
+
+DELIVERABLES
+1. parley_ai/scoring.py with function:
+
+   def score_session(
+       history: list[dict],
+       hidden_context: dict | None = None,
+       outcome: str = 'deal_closed',     # or 'walked_away', 'timeout'
+       final_deal_value: float | None = None,
+       user_brief: dict | None = None,   # {target, batna, ...}
+       llm: LLMRouter | None = None,
+   ) -> dict:
+
+   Returns dict with EXACT keys:
+     - score: int (0-100)
+     - rating: one of 'Poor', 'Fair', 'Good', 'Excellent'
+     - best_move: {turn: int, summary: str, reason: str}
+     - worst_move: {turn: int, summary: str, reason: str}
+
+2. The score is a weighted blend of:
+   - Outcome quality: did they close? did they get close to their target?
+     did they beat their BATNA? (50%)
+   - Move quality: average of critic strength/weakness counts across
+     all user turns (50%)
+
+   If hidden_context, user_brief, or final_deal_value are not provided,
+   fall back to move-quality-only scoring.
+
+3. Best/worst move selection: use an LLM call with the full transcript
+   plus the critic feedback per turn to identify the most impactful
+   moves in either direction.
+
+4. Rating thresholds:
+   - 0-39   Poor
+   - 40-59  Fair
+   - 60-79  Good
+   - 80-100 Excellent
+
+5. Update parley_ai/__init__.py.
+
+6. scripts/test_scoring.py — run a fake 5-turn negotiation transcript
+   through scoring and print the result.
+
+DO NOT
+- Do not require all fields. The function must degrade gracefully when
+  outcome or final_deal_value is missing.
+
+WHEN DONE
+Run: python scripts/test_scoring.py
+Expected: a complete score object printed, with realistic best/worst
+move identification.
+
+
+================================================================================
+                              TASK 8 OF 10
+                      Prompt iteration + quality testing
+================================================================================
+
+GOAL
+Stress-test all three agents (Move Parser, Opponent, Critic) on edge
+cases and tune prompts until quality is consistently good.
+
+THIS IS NOT A NEW FILE TASK — it's a quality pass on existing prompts.
+
+DELIVERABLES
+1. scripts/quality_test.py with 15 test cases (5 per agent) covering:
+   - Move Parser:
+       * Implicit offers ("I was thinking somewhere in the high 80s")
+       * Multi-issue messages ("I'd take 90K with 25 days PTO")
+       * Walk-away signals ("I have to think about this")
+       * Aggressive openings ("100K or I'm out")
+       * Vague responses ("That's interesting")
+   - Opponent: each action type (Hold, Concede S, Concede L, Bluff, Walk)
+   - Critic:
+       * Strong moves (good anchor)
+       * Weak moves (premature disclosure)
+       * Neutral moves (information gathering)
+       * Walk-away threats (credible vs not)
+       * Closing moves
+
+2. For each case, print:
+   - Input
+   - Output
+   - Pass/fail (manual judgment, you write a comment in the file)
+
+3. Iterate on the system prompts in move_parser.py, opponent.py,
+   critic.py until 14 of 15 cases pass cleanly.
+
+4. Document any persistent failure modes in a short FAILURE_NOTES.md
+   so Taanush knows what to expect at integration time.
+
+DO NOT
+- Do not change function signatures. Only the prompts inside the agent
+  files should change.
+
+WHEN DONE
+Run: python scripts/quality_test.py
+Expected: ≥14/15 cases pass. Output is well-structured and the
+opponent feels human across all action types.
+
+
+================================================================================
+                              TASK 9 OF 10
+                  End-to-end pipeline eval script
+================================================================================
+
+GOAL
+Build a script that runs a complete negotiation end-to-end using all
+real agents (no stubs), simulating both sides. This validates that the
+full pipeline works before Taanush integrates it.
+
+DELIVERABLES
+1. parley_ai/eval.py with function:
+
+   def run_full_negotiation(
+       scenario: dict,                # {user_brief, opponent_hidden, opening_offer, max_turns}
+       user_strategy: callable | None = None,   # optional auto-user
+   ) -> dict:
+
+   Returns dict with:
+     - transcript: full conversation
+     - rl_actions: list of strategic actions chosen
+     - critic_feedback_per_turn: list of critic outputs
+     - final_score: score_session() result
+     - outcome: 'deal_closed' | 'walked_away' | 'timeout'
+
+2. A default user_strategy that picks moderately reasonable user moves
+   from a fixed template list. This lets you run the loop without
+   manual input.
+
+3. scripts/eval_pipeline.py — runs 3 full negotiations using different
+   scenarios (salary, freelance, rent) and prints the transcript +
+   score for each.
+
+4. Capture latency per turn (LLM call time) and print summary stats
+   at the end.
+
+CONSTRAINTS
+- Loop must respect max_turns from the scenario.
+- Loop must end early if outcome is 'walked_away' or a deal is reached.
+- All real LLM calls — no stubs in this script.
+
+DO NOT
+- Do not invent scenarios out of thin air. Use realistic ones: salary
+  negotiation around 80-95K, freelance project around 5-15K, rent
+  around 2000-3000/mo.
+
+WHEN DONE
+Run: python scripts/eval_pipeline.py
+Expected: 3 complete negotiations printed end-to-end with scores.
+Average per-turn latency printed at the end (target: under 8s with
+Ollama on a typical laptop).
+
+
+================================================================================
+                              TASK 10 OF 10
+            Final hardening + integration interface review
+================================================================================
+
+GOAL
+Lock down the parley_ai package for handoff. Make it robust, document
+its public interface clearly, and produce a quick reference card for
+Taanush.
+
+DELIVERABLES
+1. Review parley_ai/__init__.py — ensure the 5 public functions are
+   all that's exposed. Hide internals (LLMRouter, StrategyPolicy, etc.)
+   from the public namespace.
+
+2. Add the following to every public function:
+   - Validation of required input keys (raise ValueError on missing).
+   - Try/except wrapping that logs errors and falls back to safe defaults
+     rather than raising — Taanush's FastAPI should never crash because
+     of a bad LLM response.
+
+3. Create INTERFACE.md at the package root with:
+   - One-paragraph description of each function
+   - Exact input/output schemas with example values
+   - Common errors and how the function handles them
+   - Configuration env vars Taanush needs to set
+
+4. Create scripts/smoke_test.py — a 30-second script that imports
+   parley_ai, calls every public function once with realistic data,
+   and confirms all 5 produce valid output. This is what Taanush will
+   run after pulling my changes.
+
+5. Final pass on logging: every agent should log its LLM provider, the
+   latency of the call, and any fallback that triggered. Use the
+   standard `logging` module at INFO level.
+
+DO NOT
+- Do not refactor function signatures at this stage. Stability matters.
+- Do not expose internal classes. The public surface is exactly 5
+  functions.
+
+WHEN DONE
+Run: python scripts/smoke_test.py
+Expected: all 5 functions execute without errors. INTERFACE.md is
+readable by someone who hasn't seen the codebase.
+
+================================================================================
+                                  END OF DOCUMENT
+================================================================================
+
+

@@ -1088,8 +1088,6 @@ Optimization knobs (if needed)
     │   │   ├── base.py              LLMClient interface
     │   │   ├── ollama.py            Ollama implementation
     │   │   └── gemini.py            Gemini implementation
-    │   └── models/
-    │       └── best_model.zip       Trained PPO weights (~150 KB)
     │
     ├── frontend/
     │   ├── app/
@@ -1124,6 +1122,9 @@ Optimization knobs (if needed)
     ├── docs/
     │   ├── system_architecture.txt  This document
     │   └── pitch_deck.pdf
+    │
+    ├── models/
+    │   └── best_model.zip           Trained PPO weights (~150 KB)
     │
     ├── .env.example                 Template for API keys
     ├── .gitignore
