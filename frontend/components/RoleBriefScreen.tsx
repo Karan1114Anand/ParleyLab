@@ -25,20 +25,9 @@ export function RoleBriefScreen() {
   const { selectedScenario, setSession, goToLanding, phase } = useNegotiationStore();
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [redirecting, setRedirecting] = useState(false);
 
-  // Guard: if no scenario selected, redirect to landing via effect (never in render body)
-  useEffect(() => {
-    if (!selectedScenario) {
-      setRedirecting(true);
-      goToLanding();
-    }
-  }, [selectedScenario, goToLanding]);
-
-
-
-  // While redirecting (or no scenario), render nothing
-  if (!selectedScenario || redirecting) {
+  // If somehow selectedScenario is missing, render a fallback
+  if (!selectedScenario) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden text-white/50">
         <div className="w-8 h-8 rounded-full border-2 border-brand-500 border-t-transparent animate-spin mb-4" />

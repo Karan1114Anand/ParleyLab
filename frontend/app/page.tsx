@@ -45,15 +45,16 @@ export default function HomePage() {
       </div>
 
       {/* Phase: brief */}
-      <div
-        key="brief"
-        style={{
-          display: phase === 'brief' ? 'block' : 'none',
-          animation: phase === 'brief' ? 'slideUpIn 0.45s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
-        }}
-      >
-        <RoleBriefScreen />
-      </div>
+      {phase === 'brief' && (
+        <div
+          key="brief"
+          style={{
+            animation: 'slideUpIn 0.45s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
+          <RoleBriefScreen />
+        </div>
+      )}
 
       <style jsx global>{`
         @keyframes fadeIn {
