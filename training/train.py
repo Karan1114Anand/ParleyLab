@@ -46,11 +46,12 @@ class NegotiationEnv(gym.Env):
 
     metadata = {"render_modes": ["human"]}
 
-    def __init__(self, max_turns: int = 10, agent_is_seller: bool = False):
+    def __init__(self, max_turns: int = 10, agent_is_seller: bool = False, difficulty: float = 0.5):
         super().__init__()
 
         self.max_turns = max_turns
         self.agent_is_seller = agent_is_seller
+        self.difficulty = max(0.0, min(1.0, difficulty))
 
         # Action space: 5 discrete strategic moves
         self.action_space = spaces.Discrete(5)
@@ -162,8 +163,11 @@ class NegotiationEnv(gym.Env):
                 self.opponent_offer = np.clip(self.opponent_offer + 3, 0, 100)
             return
 
-        # Base concession: small step toward agent's offer
-        concession_size = np.random.uniform(1, 3) * (1 + deadline_factor)
+        # Base concession: scale range by difficulty
+        # difficulty=0.0 → uniform(1, 6), difficulty=1.0 → uniform(0.5, 1)
+        low  = 1.0 - 0.5 * self.difficulty   # 1.0 → 0.5
+        high = 6.0 - 5.0 * self.difficulty   # 6.0 → 1.0
+        concession_size = np.random.uniform(low, high) * (1 + deadline_factor)
 
         if gap < 3:
             # Close enough — split the difference
@@ -315,12 +319,20 @@ def train(
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(log_dir,  exist_ok=True)
 
-    # Buyer-side agent
-    env_buyer  = Monitor(NegotiationEnv(max_turns=10, agent_is_seller=False), log_dir)
-    eval_env   = Monitor(NegotiationEnv(max_turns=10, agent_is_seller=False))
+    from stable_baselines3.common.vec_env import SubprocVecEnv
+
+    difficulty_levels = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+    def make_env(difficulty):
+        def _init():
+            return Monitor(NegotiationEnv(max_turns=10, agent_is_seller=False, difficulty=difficulty))
+        return _init
+
+    env_buyer = SubprocVecEnv([make_env(d) for d in difficulty_levels])
+    eval_env  = Monitor(NegotiationEnv(max_turns=10, agent_is_seller=False, difficulty=0.5))
 
     print("Checking environment validity...")
-    check_env(NegotiationEnv(max_turns=10, agent_is_seller=False), warn=True)
+    check_env(NegotiationEnv(max_turns=10, agent_is_seller=False, difficulty=0.5), warn=True)
     print("Environment check passed.\n")
 
     # Callbacks
@@ -363,7 +375,7 @@ def train(
         env=env_buyer,
         learning_rate=3e-4,
         n_steps=2048,
-        batch_size=64,
+        batch_size=320,
         n_epochs=10,
         gamma=0.99,
         gae_lambda=0.95,
@@ -473,7 +485,7 @@ def get_strategy_action(
 def evaluate(model_path: str = "models/best_model", n_episodes: int = 100):
     """Run evaluation episodes and print summary statistics."""
     model = load_agent(model_path)
-    env   = NegotiationEnv(max_turns=10, agent_is_seller=False)
+    env   = NegotiationEnv(max_turns=10, agent_is_seller=False, difficulty=0.5)
 
     outcomes      = {"deal_closed": 0, "agent_walked_away": 0, "timeout": 0}
     deal_values   = []

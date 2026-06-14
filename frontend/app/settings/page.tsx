@@ -28,6 +28,8 @@ export default function SettingsPage() {
   const [search, setSearch] = useState('');
   const [saved, setSaved] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [llmProvider, setLlmProvider] = useState<'ollama' | 'gemini'>('ollama');
+  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
 
   useEffect(() => {
     setMounted(true);
@@ -68,221 +70,389 @@ export default function SettingsPage() {
 
   const canSave = localName.trim().length >= 1 && localCountry;
 
+  const getInitials = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 0 || !parts[0]) return '?';
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
   if (!mounted) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+      <div
+        style={{
+          minHeight: 'calc(100vh - 48px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            border: '2px solid var(--accent)',
+            borderTopColor: 'transparent',
+          }}
+          className="animate-spin"
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center px-4 py-8 relative overflow-hidden">
-      {/* Ambient background */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div
-          className="absolute w-[600px] h-[600px] rounded-full blur-3xl opacity-15"
-          style={{
-            background: 'radial-gradient(circle, #6470f3 0%, transparent 70%)',
-            top: '-15%',
-            right: '-10%',
-          }}
-        />
-        <div
-          className="absolute w-[400px] h-[400px] rounded-full blur-3xl opacity-10"
-          style={{
-            background: 'radial-gradient(circle, #c084fc 0%, transparent 70%)',
-            bottom: '-10%',
-            left: '-5%',
-          }}
-        />
-        <div
-          className="absolute inset-0 opacity-[0.02]"
-          style={{
-            backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)
-            `,
-            backgroundSize: '60px 60px',
-          }}
-        />
-      </div>
+    <div className="settings-container">
+      {/* Back button */}
+      <button
+        onClick={() => router.push('/')}
+        className="btn-ghost"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '13px',
+          marginBottom: '32px',
+        }}
+      >
+        <ArrowLeft size={14} />
+        Back to home
+      </button>
 
-      <div className="relative z-10 w-full max-w-2xl">
-        {/* Back button */}
-        <button
-          onClick={() => router.push('/')}
-          className="flex items-center gap-2 text-sm text-white/40 hover:text-white/80 transition-colors mb-8 group"
-        >
-          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-          Back to home
-        </button>
+      {/* Section title */}
+      <h1 className="settings-title">Profile settings</h1>
 
-        {/* Header */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-white/[0.06] border border-white/[0.1] backdrop-blur-sm">
-            <User className="w-3.5 h-3.5 text-brand-400" />
-            <span className="text-xs font-semibold text-brand-300 tracking-wide uppercase">
-              Profile Settings
-            </span>
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight mb-3">
-            Your Profile
-          </h1>
-          <p className="text-white/40 text-lg max-w-md mx-auto">
-            Set your name and country so the AI can personalize your negotiation experience.
-          </p>
+      {/* Avatar + name row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+        <div className="settings-avatar">
+          {getInitials(localName || userName || 'U')}
         </div>
-
-        {/* ── Name field ────────────────────────────────────────────────────── */}
-        <div className="mb-8">
-          <label className="block text-xs text-white/40 uppercase tracking-widest font-semibold mb-3">
-            Your Name
-          </label>
-          <div className="relative">
-            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/25" />
-            <input
-              id="settings-name-input"
-              type="text"
-              value={localName}
-              onChange={(e) => setLocalName(e.target.value)}
-              placeholder="Enter your name…"
-              maxLength={50}
-              className="w-full pl-12 pr-4 py-4 rounded-2xl
-                bg-white/[0.04] border border-white/[0.08]
-                text-white text-lg placeholder:text-white/20
-                focus:outline-none focus:border-brand-500/50 focus:bg-white/[0.06]
-                transition-all duration-200"
-            />
-          </div>
-          <p className="text-xs text-white/25 mt-2 ml-1">
-            The AI opponent will address you by this name during negotiations.
-          </p>
-        </div>
-
-        {/* ── Country selector ──────────────────────────────────────────────── */}
-        <div className="mb-8">
-          <label className="block text-xs text-white/40 uppercase tracking-widest font-semibold mb-3">
-            <Globe className="inline w-3.5 h-3.5 mr-1.5 -mt-0.5" />
-            Your Country
-          </label>
-
-          {/* Selected country display */}
-          {selectedCountry && (
-            <div
-              className="mb-4 px-5 py-4 rounded-2xl border flex items-center gap-4"
-              style={{
-                background: 'rgba(100,112,243,0.08)',
-                borderColor: 'rgba(100,112,243,0.25)',
-              }}
-            >
-              <span className="text-3xl">{selectedCountry.flag}</span>
-              <div>
-                <p className="text-white font-semibold text-lg">{selectedCountry.name}</p>
-                <p className="text-white/40 text-sm">
-                  Currency: {selectedCountry.currencySymbol} ({selectedCountry.currency}) — {selectedCountry.currencyName}
-                </p>
-              </div>
-              <Check className="ml-auto w-5 h-5 text-brand-400" />
-            </div>
-          )}
-
-          {/* Search */}
-          <div className="relative mb-3">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-            <input
-              id="settings-country-search"
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search countries…"
-              className="w-full pl-11 pr-4 py-3 rounded-xl
-                bg-white/[0.03] border border-white/[0.06]
-                text-white text-sm placeholder:text-white/20
-                focus:outline-none focus:border-white/20
-                transition-all duration-200"
-            />
-          </div>
-
-          {/* Country grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[360px] overflow-y-auto pr-1 rounded-xl"
-            style={{ scrollbarWidth: 'thin' }}
-          >
-            {filtered.map((country) => {
-              const isSelected = country.code === localCountry;
-              return (
-                <button
-                  key={country.code}
-                  id={`country-${country.code}`}
-                  onClick={() => setLocalCountry(country.code)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all duration-200 ${
-                    isSelected
-                      ? 'bg-brand-500/10 border-brand-500/40'
-                      : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/[0.12]'
-                  }`}
-                >
-                  <span className="text-xl">{country.flag}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className={`text-sm font-medium truncate ${isSelected ? 'text-white' : 'text-white/70'}`}>
-                      {country.name}
-                    </p>
-                    <p className="text-[11px] text-white/30">
-                      {country.currencySymbol} {country.currency}
-                    </p>
-                  </div>
-                  {isSelected && (
-                    <Check className="w-4 h-4 text-brand-400 shrink-0" />
-                  )}
-                </button>
-              );
-            })}
-            {filtered.length === 0 && (
-              <p className="col-span-2 text-center text-sm text-white/20 py-6">
-                No countries match "{search}"
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* ── Save button ──────────────────────────────────────────────────── */}
-        <div className="flex justify-center">
-          <button
-            id="save-settings-btn"
-            onClick={handleSave}
-            disabled={!canSave || saved}
-            className="relative px-10 py-4 rounded-2xl font-bold text-white text-lg
-              flex items-center justify-center gap-3 overflow-hidden
-              disabled:opacity-50 disabled:cursor-not-allowed
-              transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+        <div style={{ flex: 1 }}>
+          <p
             style={{
-              background: saved
-                ? 'linear-gradient(135deg, #34d399, #059669)'
-                : 'linear-gradient(135deg, #6470f3, #8b5cf6)',
-              boxShadow: saved
-                ? '0 8px 32px rgba(52,211,153,0.35)'
-                : canSave
-                ? '0 8px 32px rgba(100,112,243,0.35)'
-                : 'none',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontSize: '14px',
+              fontWeight: 500,
+              color: 'var(--text)',
+              margin: '0 0 2px',
             }}
           >
-            {saved ? (
-              <>
-                <Check className="w-5 h-5" />
-                <span>Saved!</span>
-              </>
-            ) : (
-              <>
-                <Check className="w-5 h-5" />
-                <span>Save Settings</span>
-              </>
-            )}
+            {localName || 'Your name'}
+          </p>
+          {selectedCountry && (
+            <p
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                margin: 0,
+              }}
+            >
+              {selectedCountry.flag} {selectedCountry.name} · {selectedCountry.currency}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Form fields (2-column grid) ──────────────────────────────────── */}
+      <div className="form-grid-2col" style={{ marginBottom: '24px' }}>
+        <div>
+          <label className="settings-field-label" htmlFor="settings-name-input">
+            Display name
+          </label>
+          <input
+            id="settings-name-input"
+            type="text"
+            value={localName}
+            onChange={(e) => setLocalName(e.target.value)}
+            placeholder="Enter your name…"
+            maxLength={50}
+            className="settings-input"
+          />
+        </div>
+        <div>
+          <label className="settings-field-label">
+            Email
+          </label>
+          <input
+            type="email"
+            placeholder="you@example.com"
+            className="settings-input"
+            disabled
+            style={{ opacity: 0.5, cursor: 'not-allowed' }}
+          />
+        </div>
+      </div>
+
+      <div className="form-grid-2col" style={{ marginBottom: '24px' }}>
+        <div>
+          <label className="settings-field-label">
+            Default scenario
+          </label>
+          <input
+            type="text"
+            value="Salary negotiation"
+            className="settings-input"
+            disabled
+            style={{ opacity: 0.5, cursor: 'not-allowed' }}
+          />
+        </div>
+        <div>
+          <label className="settings-field-label">
+            Difficulty
+          </label>
+          <input
+            type="text"
+            value="Adaptive"
+            className="settings-input"
+            disabled
+            style={{ opacity: 0.5, cursor: 'not-allowed' }}
+          />
+        </div>
+      </div>
+
+      {/* ── Country selector ──────────────────────────────────────────────── */}
+      <div style={{ marginBottom: '24px' }}>
+        <label className="settings-field-label">
+          <Globe
+            style={{
+              display: 'inline',
+              width: '12px',
+              height: '12px',
+              marginRight: '4px',
+              verticalAlign: 'middle',
+            }}
+          />
+          Your country
+        </label>
+
+        {/* Selected country display */}
+        {selectedCountry && (
+          <div
+            style={{
+              marginBottom: '12px',
+              padding: '12px 16px',
+              border: '1px solid var(--accent)',
+              borderRadius: '2px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              background: 'rgba(232, 83, 10, 0.06)',
+            }}
+          >
+            <span style={{ fontSize: '24px' }}>{selectedCountry.flag}</span>
+            <div>
+              <p
+                style={{
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: 'var(--text)',
+                  margin: 0,
+                }}
+              >
+                {selectedCountry.name}
+              </p>
+              <p
+                style={{
+                  fontSize: '11px',
+                  color: 'var(--text-muted)',
+                  margin: 0,
+                }}
+              >
+                {selectedCountry.currencySymbol} ({selectedCountry.currency}) — {selectedCountry.currencyName}
+              </p>
+            </div>
+            <Check
+              style={{
+                marginLeft: 'auto',
+                width: '16px',
+                height: '16px',
+                color: 'var(--accent)',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Search */}
+        <div style={{ position: 'relative', marginBottom: '8px' }}>
+          <Search
+            style={{
+              position: 'absolute',
+              left: '12px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: '14px',
+              height: '14px',
+              color: 'var(--text-dim)',
+            }}
+          />
+          <input
+            id="settings-country-search"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search countries…"
+            className="settings-input"
+            style={{ paddingLeft: '36px' }}
+          />
+        </div>
+
+        {/* Country grid */}
+        <div
+          className="form-grid-2col"
+          style={{
+            maxHeight: '280px',
+            overflowY: 'auto',
+            gap: '4px',
+          }}
+        >
+          {filtered.map((c) => {
+            const isSelected = c.code === localCountry;
+            return (
+              <button
+                key={c.code}
+                id={`country-${c.code}`}
+                onClick={() => setLocalCountry(c.code)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 12px',
+                  border: `1px solid ${isSelected ? '#E8530A' : 'var(--border)'}`,
+                  borderRadius: '2px',
+                  background: isSelected ? 'rgba(232, 83, 10, 0.06)' : 'transparent',
+                  color: isSelected ? 'var(--text)' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'border-color 150ms ease',
+                  width: '100%',
+                  fontFamily: 'inherit',
+                  fontSize: '13px',
+                }}
+              >
+                <span>{c.flag}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: isSelected ? 500 : 400,
+                      color: isSelected ? 'var(--text)' : 'var(--text-muted)',
+                      margin: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {c.name}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: '10px',
+                      color: 'var(--text-dim)',
+                      margin: 0,
+                    }}
+                  >
+                    {c.currencySymbol} {c.currency}
+                  </p>
+                </div>
+                {isSelected && (
+                  <Check
+                    style={{
+                      width: '14px',
+                      height: '14px',
+                      color: '#E8530A',
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              </button>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p
+              style={{
+                gridColumn: '1 / -1',
+                textAlign: 'center',
+                fontSize: '12px',
+                color: 'var(--text-dim)',
+                padding: '24px 0',
+              }}
+            >
+              No countries match &quot;{search}&quot;
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Divider ──────────────────────────────────────────────────────── */}
+      <hr className="settings-divider" />
+
+      {/* ── LLM Provider ─────────────────────────────────────────────────── */}
+      <div style={{ marginBottom: '24px' }}>
+        <label className="settings-field-label">LLM provider</label>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <button
+            className={`settings-chip ${llmProvider === 'ollama' ? 'settings-chip-active' : ''}`}
+            onClick={() => setLlmProvider('ollama')}
+          >
+            Ollama
+          </button>
+          <button
+            className={`settings-chip ${llmProvider === 'gemini' ? 'settings-chip-active' : ''}`}
+            onClick={() => setLlmProvider('gemini')}
+          >
+            Gemini
           </button>
         </div>
 
-        <p className="text-center text-xs text-white/20 mt-6">
-          Settings are saved locally and persist across sessions.
-        </p>
+        {llmProvider === 'ollama' && (
+          <div>
+            <label className="settings-field-label">Ollama base URL</label>
+            <input
+              type="text"
+              value={ollamaUrl}
+              onChange={(e) => setOllamaUrl(e.target.value)}
+              placeholder="http://localhost:11434"
+              className="settings-input"
+            />
+          </div>
+        )}
       </div>
+
+      {/* ── Save button ──────────────────────────────────────────────────── */}
+      <button
+        id="save-settings-btn"
+        onClick={handleSave}
+        disabled={!canSave || saved}
+        className="settings-save-btn"
+      >
+        {saved ? (
+          <>
+            <Check
+              style={{
+                display: 'inline',
+                width: '14px',
+                height: '14px',
+                verticalAlign: 'middle',
+                marginRight: '6px',
+              }}
+            />
+            Saved!
+          </>
+        ) : (
+          'Save changes →'
+        )}
+      </button>
+
+      <p
+        style={{
+          fontSize: '11px',
+          color: 'var(--text-dim)',
+          marginTop: '16px',
+          fontFamily: 'var(--font-mono, monospace)',
+        }}
+      >
+        Settings are saved locally and persist across sessions.
+      </p>
     </div>
   );
 }

@@ -15,6 +15,6 @@
     "gap_norm",
     "turns_since_last_concession_norm"
   ],
-  "total_timesteps": 300000,
+  "total_timesteps": 1000000,
   "agent_role": "buyer"
 }

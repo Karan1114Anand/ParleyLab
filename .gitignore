@@ -28,11 +28,15 @@ env/
 .DS_Store
 Thumbs.db
 
-# ParleyLab specific
+# Internal dev documents
 WORKGRAPH.md
+Workflow.md
+FAILURE_NOTES.md
+INTERFACE.md
 scratch/
-.venv
+
 # Training artifacts — keep best_model.zip and model_metadata.json, exclude checkpoints
+.venv
 models/negotiation_ppo_*.zip
 models/negotiation_agent_final.zip
 logs/

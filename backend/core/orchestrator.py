@@ -207,6 +207,7 @@ def start_session(
         opponent_urgency=hidden["urgency"],
         opponent_current_offer=opening,
         user_name=user_name or "",
+        difficulty=0.5,              # TODO: replace with profile lookup in Fix 2
     )
 
     opener = _generate_opener(state)
@@ -472,20 +473,27 @@ def _build_observation(state: SessionState) -> np.ndarray:
 
 
 def _apply_action(state: SessionState, action: int) -> float:
-    """Translate RL action into a new numeric opponent offer."""
+    """Translate RL action into a new numeric opponent offer.
+
+    Step sizes scale with difficulty (0.0=easy, 1.0=hard):
+      Concede Small: 12% of gap (easy) → 5% of gap (hard)
+      Concede Large: 30% at easy, 15% at hard
+    Hold Firm, Bluff, and Walk Away are unaffected by difficulty.
+    """
     current    = state.opponent_current_offer
     user_offer = state.user_offers[-1] if state.user_offers else current
     gap        = abs(current - user_offer)
+    d          = max(0.0, min(1.0, getattr(state, "difficulty", 0.5)))
 
-    if action == 0:
+    if action == 0:   # Hold Firm
         return round(current, 2)
-    elif action == 1:
-        step = gap * 0.05
-    elif action == 2:
-        step = gap * 0.15
-    elif action == 3:
+    elif action == 1: # Concede Small — 12% at easy, 5% at hard
+        step = gap * (0.12 - 0.07 * d)
+    elif action == 2: # Concede Large — 30% at easy, 15% at hard
+        step = gap * (0.30 - 0.15 * d)
+    elif action == 3: # Bluff — unaffected by difficulty
         step = -(gap * 0.05)
-    else:
+    else:             # Walk Away
         return round(current, 2)
 
     if current > user_offer:

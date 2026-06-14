@@ -90,6 +90,7 @@ class SessionState:
 
     # User profile info
     user_name: str = ""
+    difficulty: float = 0.5          # 0.0 = easy, 1.0 = hard; loaded from user profile
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 

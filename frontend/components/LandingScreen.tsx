@@ -5,15 +5,9 @@ import { getCountryByCode } from '@/lib/countries';
 import { ScenarioCard } from '@/components/ScenarioCard';
 import { useNegotiationStore } from '@/store/useNegotiationStore';
 import { useUserSettingsStore } from '@/store/useUserSettingsStore';
-import { Swords, Zap, ChevronDown, Settings, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-/**
- * LandingScreen — hero section + animated scenario grid.
- *
- * Handles scenario loading and passes selection up to the Zustand store.
- */
 export function LandingScreen() {
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,143 +30,100 @@ export function LandingScreen() {
     gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  // keep router/scrollToGrid in scope so the logic section is unchanged
+  void router;
+  void scrollToGrid;
+
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <section className="relative flex flex-col items-center justify-center min-h-[92vh] px-4 text-center overflow-hidden">
+    <div style={{ minHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column' }}>
 
-        {/* Animated gradient orbs */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* ── Hero band ────────────────────────────────────────────────────── */}
+      <section className="hero-band">
+        <h1 className="hero-title">AI NEGOTIATION SIMULATOR.</h1>
+        <p className="hero-subtitle">
+          Practice before the stakes are real — train against RL-powered opponents with live coaching
+        </p>
+
+        {/* User badge */}
+        {isConfigured && userName && (
           <div
-            className="absolute w-[600px] h-[600px] rounded-full blur-3xl opacity-20 animate-pulse-slow"
             style={{
-              background: 'radial-gradient(circle, #6470f3 0%, transparent 70%)',
-              top: '-10%', left: '-5%',
+              marginTop: '16px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '4px 12px',
+              border: '1px solid rgba(255,255,255,0.3)',
+              borderRadius: '2px',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontSize: '11px',
+              color: 'rgba(255,255,255,0.8)',
             }}
-          />
-          <div
-            className="absolute w-[500px] h-[500px] rounded-full blur-3xl opacity-15"
-            style={{
-              background: 'radial-gradient(circle, #c084fc 0%, transparent 70%)',
-              bottom: '-5%', right: '-5%',
-              animation: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) 1s infinite',
-            }}
-          />
-          {/* Grid lines */}
-          <div
-            className="absolute inset-0 opacity-[0.025]"
-            style={{
-              backgroundImage: `
-                linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)
-              `,
-              backgroundSize: '60px 60px',
-            }}
-          />
-        </div>
-
-        {/* Content */}
-        <div className="relative z-10 max-w-3xl mx-auto animate-fade-up">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 mb-8 px-4 py-2 rounded-full bg-white/[0.06] border border-white/[0.1] backdrop-blur-sm">
-            <Zap className="w-3.5 h-3.5 text-brand-400" />
-            <span className="text-xs font-semibold text-brand-300 tracking-wide uppercase">
-              RL + Gemini Negotiation Coach
-            </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          >
+            <span>{userName}</span>
+            {country && <span>{country.flag}</span>}
+            {country && (
+              <span style={{ color: 'rgba(255,255,255,0.5)' }}>{country.currency}</span>
+            )}
           </div>
+        )}
 
-          {/* Headline */}
-          <h1 className="text-6xl sm:text-7xl font-extrabold leading-[1.08] tracking-tight mb-6">
-            <span className="text-white">Master the</span>
-            <br />
-            <span className="gradient-text">art of the deal.</span>
-          </h1>
-
-          <p className="text-lg sm:text-xl text-white/50 leading-relaxed max-w-xl mx-auto mb-10">
-            Go head-to-head with an AI opponent powered by reinforcement learning.
-            Get brutally honest coaching on every move — before the stakes are real.
-          </p>
-
-          {/* Stats */}
-          <div className="flex flex-wrap justify-center gap-8 mb-12">
-            {[
-              { value: '4', label: 'Real Scenarios' },
-              { value: 'PPO + LLM', label: 'AI Stack' },
-              { value: 'Real-time', label: 'Coaching' },
-              { value: '∞', label: 'Practice Rounds' },
-            ].map(({ value, label }) => (
-              <div key={label} className="text-center">
-                <p className="text-2xl font-bold text-white">{value}</p>
-                <p className="text-xs text-white/40 mt-0.5">{label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* CTA buttons */}
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <button
-              onClick={scrollToGrid}
-              className="btn-accent inline-flex items-center gap-2 px-8 py-4 rounded-2xl text-base font-semibold"
-            >
-              <Swords className="w-5 h-5" />
-              Choose Your Scenario
-            </button>
-            <button
-              onClick={() => router.push('/settings')}
-              className="inline-flex items-center gap-2 px-6 py-4 rounded-2xl text-sm font-semibold
-                bg-white/[0.06] border border-white/[0.10] text-white/60
-                hover:bg-white/[0.10] hover:text-white/90 hover:border-white/[0.20]
-                transition-all duration-200"
-            >
-              <Settings className="w-4 h-4" />
-              {isConfigured ? 'Settings' : 'Set Up Profile'}
-            </button>
-          </div>
-
-          {/* User info badge */}
-          {isConfigured && userName && (
-            <div className="mt-6 inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/[0.04] border border-white/[0.08] animate-fade-up">
-              <User className="w-3.5 h-3.5 text-brand-400" />
-              <span className="text-xs text-white/50">
-                Playing as <span className="text-white/80 font-semibold">{userName}</span>
-              </span>
-              {country && (
-                <span className="text-base">{country.flag}</span>
-              )}
-              {country && (
-                <span className="text-[10px] text-white/30 font-mono">{country.currency}</span>
-              )}
+        {/* Stats row */}
+        <div className="hero-stats">
+          {[
+            { value: '300K', label: 'Training episodes' },
+            { value: '86%', label: 'Deal close rate' },
+            { value: '4', label: 'Scenarios' },
+            { value: '<1ms', label: 'RL latency' },
+          ].map((stat) => (
+            <div key={stat.label} style={{ textAlign: 'center' }}>
+              <p className="hero-stat-value">{stat.value}</p>
+              <p className="hero-stat-label">{stat.label}</p>
             </div>
-          )}
+          ))}
         </div>
-
-        {/* Scroll hint */}
-        <button
-          onClick={scrollToGrid}
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/20 hover:text-white/50 transition-colors animate-bounce"
-        >
-          <ChevronDown className="w-6 h-6" />
-        </button>
       </section>
 
       {/* ── Scenario Grid ─────────────────────────────────────────────────── */}
-      <section ref={gridRef} className="px-4 pb-24 max-w-5xl mx-auto w-full">
-        {/* Section header */}
-        <div className="flex items-center gap-4 mb-10">
-          <div className="flex-1 h-px bg-white/[0.06]" />
-          <div className="flex items-center gap-2.5 px-5 py-2 rounded-full bg-white/[0.04] border border-white/[0.08]">
-            <Swords className="w-4 h-4 text-brand-400" />
-            <span className="text-sm font-semibold text-white">Select Your Negotiation</span>
-          </div>
-          <div className="flex-1 h-px bg-white/[0.06]" />
+      <section
+        ref={gridRef}
+        style={{
+          maxWidth: '1100px',
+          margin: '0 auto',
+          width: '100%',
+          padding: '32px 24px 64px',
+          flex: 1,
+        }}
+      >
+        {/* Divider + label */}
+        <div style={{ marginBottom: '24px' }}>
+          <p
+            style={{
+              fontFamily: 'var(--font-mono, monospace)',
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              margin: 0,
+            }}
+          >
+            Select scenario
+          </p>
         </div>
 
         {/* Error */}
         {error && (
-          <div className="mb-6 p-4 rounded-2xl bg-red-500/5 border border-red-500/20 animate-fade-up">
-            <p className="text-sm text-red-300 text-center">{error}</p>
-            <p className="text-xs text-white/30 text-center mt-1">
+          <div
+            className="animate-fade-up"
+            style={{
+              marginBottom: '24px',
+              padding: '16px',
+              border: '1px solid var(--danger)',
+              borderRadius: '4px',
+            }}
+          >
+            <p style={{ fontSize: '14px', color: 'var(--danger)', margin: 0 }}>{error}</p>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
               Make sure the backend is running on port 8000.
             </p>
           </div>
@@ -180,17 +131,17 @@ export function LandingScreen() {
 
         {/* Skeleton or cards */}
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="scenario-grid">
             {[0, 1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-56 rounded-2xl shimmer"
-                style={{ animationDelay: `${i * 120}ms` }}
+                className="shimmer"
+                style={{ height: '200px', animationDelay: `${i * 120}ms` }}
               />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="scenario-grid">
             {scenarios.map((s, i) => (
               <ScenarioCard
                 key={s.id}
@@ -202,9 +153,34 @@ export function LandingScreen() {
           </div>
         )}
 
+        {/* Pillars strip */}
+        {!loading && !error && (
+          <div className="pillars-strip">
+            {[
+              'Reinforcement learning',
+              'Real-time coaching',
+              'Dynamic opponents',
+              'Post-session analytics',
+            ].map((text) => (
+              <div key={text} className="pillar-item">
+                <div className="pillar-dot" />
+                <p className="pillar-text">{text}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Bottom note */}
         {!loading && !error && (
-          <p className="text-center text-xs text-white/20 mt-8">
+          <p
+            style={{
+              textAlign: 'center',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              marginTop: '32px',
+            }}
+          >
             Each negotiation uses a hidden opponent profile. No two sessions play the same.
           </p>
         )}

@@ -366,7 +366,7 @@ export default function NegotiationPage({
   // ── Loading state ───────────────────────────────────────────────────────────
   if (!session) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div style={{ minHeight: 'calc(100vh - 48px)' }} className="flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
           <p className="text-sm text-white/30">Loading negotiation room…</p>
@@ -380,7 +380,7 @@ export default function NegotiationPage({
   const inputDisabled = isThinking || session.isComplete;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div style={{ height: 'calc(100vh - 48px)' }} className="flex flex-col overflow-hidden">
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <NegotiationHeader
