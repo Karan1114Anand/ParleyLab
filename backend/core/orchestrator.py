@@ -76,6 +76,15 @@ def init_singletons() -> None:
     model_path = os.getenv("RL_MODEL_PATH") or None
     _policy = StrategyPolicy(model_path=model_path)
 
+    if not _policy.is_loaded:
+        logger.warning(
+            "[WARNING] Running in DEGRADED MODE: PPO policy inactive, "
+            "defaulting to deterministic heuristics. "
+            "Place models/best_model.zip in the project root to activate full RL inference."
+        )
+    else:
+        logger.info("StrategyPolicy: PPO model active — sub-ms CPU inference ready.")
+
     # ── LLM router ────────────────────────────────────────────────────────────
     model_name = os.getenv("PARLEYLAB_MODEL", "gemini-2.0-flash")
     provider = os.getenv("PARLEYLAB_LLM_PROVIDER", "gemini")

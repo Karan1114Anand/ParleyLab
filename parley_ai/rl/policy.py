@@ -1,11 +1,42 @@
-"""PPO policy loader and inference wrapper."""
+"""
+parley_ai/rl/policy.py — PPO Strategic Policy Inference Wrapper
+================================================================
+
+Wraps a Stable-Baselines3 PPO model for deterministic single-turn inference
+at runtime. The policy is loaded once at server startup (via
+``core.orchestrator.init_singletons()``) and serves all subsequent requests
+via a sub-millisecond MLP forward pass on CPU.
+
+Decoupling Contract
+-------------------
+This module makes **no network calls** and has **no dependency on any LLM
+client**. It is the boundary between the RL control plane (strategic decision)
+and the LLM dialogue plane (natural-language rendering). The orchestrator
+receives the action dict from ``predict()`` and passes it separately to
+``parley_ai.agents.opponent.generate_opponent_response()``.
+
+Degraded Mode
+-------------
+If the model file is missing or ``stable-baselines3`` is not installed,
+``StrategyPolicy`` initialises in a **degraded mode**:
+
+  - ``is_loaded`` → ``False``
+  - ``predict()`` returns ``{"action_id": 0, "action_name": "Hold Firm", ...}``
+
+This guarantees the server can start and serve requests without the model
+weights present. The orchestrator logs a WARNING when degraded mode is active.
+"""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
 
+log = logging.getLogger(__name__)
+
+# Discrete action space — matches training environment in training/env.py
 ACTION_MAP: dict[int, tuple[str, str]] = {
     0: ("Hold Firm",     "Opponent maintains their position."),
     1: ("Concede Small", "Opponent moves slightly toward your offer."),
@@ -14,50 +45,93 @@ ACTION_MAP: dict[int, tuple[str, str]] = {
     4: ("Walk Away",     "Opponent walks away from the negotiation."),
 }
 
+# Deterministic fallback action used in degraded mode (no model weights)
+_DEGRADED_ACTION: dict = {
+    "action_id":   0,
+    "action_name": "Hold Firm",
+    "description": "Opponent maintains their position. [DEGRADED MODE — PPO model not loaded]",
+}
+
 _DEFAULT_MODEL_PATH = Path(__file__).parent.parent.parent / "models" / "best_model.zip"
 
 
 class StrategyPolicy:
-    """Wraps a trained Stable-Baselines3 PPO model for single-turn inference.
+    """
+    Wraps a trained Stable-Baselines3 PPO model for single-turn inference.
 
-    Load once at startup, call ``predict`` on every turn. The forward pass
-    is a single MLP evaluation — sub-millisecond on CPU.
+    Load once at startup, call ``predict()`` on every negotiation turn.
+    The forward pass is a single MLP evaluation — sub-millisecond on CPU.
 
-    Example::
+    If the model file does not exist or ``stable-baselines3`` is unavailable,
+    the policy enters **degraded mode**: ``is_loaded`` is False and all
+    ``predict()`` calls return a deterministic ``Hold Firm`` fallback,
+    allowing the server to remain operational.
+
+    Example (loaded)::
 
         policy = StrategyPolicy()
         result = policy.predict([0.78, 0.92, 0.3, 0.05, 0.12, 0.14, 0.20])
         # {'action_id': 0, 'action_name': 'Hold Firm', 'description': '...'}
+
+    Example (degraded)::
+
+        policy = StrategyPolicy(model_path="/nonexistent/model.zip")
+        # [WARNING] PPO model not found — running in DEGRADED MODE
+        assert policy.is_loaded is False
+        result = policy.predict([0.5, 0.5, 0.5, 0.0, 0.0, 0.5, 0.0])
+        # Returns Hold Firm fallback silently
     """
 
     def __init__(self, model_path: str | Path | None = None) -> None:
-        """Load the PPO model from disk.
+        """
+        Attempt to load the PPO model from disk.
+
+        Initialises in degraded mode (no exception raised) if:
+          - ``stable-baselines3`` is not installed.
+          - The model file does not exist at ``model_path``.
 
         Args:
             model_path: Path to the ``.zip`` model file produced by
                 Stable-Baselines3. Defaults to ``models/best_model.zip``
                 relative to the project root.
-
-        Raises:
-            FileNotFoundError: If no model file exists at ``model_path``.
-            ImportError: If ``stable-baselines3`` is not installed.
         """
-        try:
-            from stable_baselines3 import PPO
-        except ImportError as exc:
-            raise ImportError(
-                "stable-baselines3 is required. "
-                "Install it with: pip install stable-baselines3"
-            ) from exc
-
+        self._model = None
         path = Path(model_path) if model_path is not None else _DEFAULT_MODEL_PATH
-        if not path.exists():
-            raise FileNotFoundError(
-                f"PPO model not found at '{path}'. "
-                "Ensure models/best_model.zip exists in the project root."
-            )
 
-        self._model = PPO.load(str(path), device="cpu")
+        # ── Attempt SB3 import ────────────────────────────────────────────────
+        try:
+            from stable_baselines3 import PPO as _PPO
+        except ImportError:
+            log.warning(
+                "[DEGRADED MODE] stable-baselines3 not installed — "
+                "PPO policy inactive, defaulting to deterministic heuristics. "
+                "Install with: pip install stable-baselines3"
+            )
+            return
+
+        # ── Attempt model load ────────────────────────────────────────────────
+        if not path.exists():
+            log.warning(
+                "[DEGRADED MODE] PPO model not found at '%s' — "
+                "PPO policy inactive, defaulting to deterministic heuristics. "
+                "Run training/train.py to generate weights, or place "
+                "best_model.zip in the models/ directory.",
+                path,
+            )
+            return
+
+        try:
+            self._model = _PPO.load(str(path), device="cpu")
+            log.info(
+                "StrategyPolicy loaded successfully from '%s' [CPU inference].", path
+            )
+        except Exception as exc:
+            log.warning(
+                "[DEGRADED MODE] Failed to load PPO model from '%s': %s — "
+                "PPO policy inactive, defaulting to deterministic heuristics.",
+                path, exc,
+            )
+            self._model = None
 
     @property
     def is_loaded(self) -> bool:
@@ -65,7 +139,11 @@ class StrategyPolicy:
         return self._model is not None
 
     def predict(self, state_vector: list[float]) -> dict:
-        """Run one forward pass and return the opponent's strategic action.
+        """
+        Run one forward pass and return the opponent's strategic action.
+
+        In degraded mode (``is_loaded == False``), returns a deterministic
+        ``Hold Firm`` action without raising an exception.
 
         Args:
             state_vector: A 7-element list of floats, each in ``[0.0, 1.0]``,
@@ -102,6 +180,10 @@ class StrategyPolicy:
             )
         if any(not (0.0 <= float(v) <= 1.0) for v in state_vector):
             raise ValueError("All elements of state_vector must be in [0.0, 1.0].")
+
+        # Degraded mode: return deterministic fallback without inference
+        if self._model is None:
+            return _DEGRADED_ACTION.copy()
 
         obs = np.array(state_vector, dtype=np.float32)
         action_array, _ = self._model.predict(obs, deterministic=True)

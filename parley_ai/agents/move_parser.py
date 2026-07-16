@@ -106,10 +106,9 @@ def parse_move(
     Args:
         user_message: The user's raw negotiation text for the current turn.
         history: Ordered list of prior messages in the session. Each element
-            is a dict with keys ``"role"`` (``"user"`` or ``"opponent"``)
-            and ``"content"`` (str). The last few turns are passed to the
-            LLM as context so it can distinguish an opening anchor from a
-            counteroffer.
+            is a dict with keys ``"role"`` (``"user"`` or ``"opponent"``).
+            Retained in signature for backwards compatibility with the orchestrator,
+            but no longer passed to the LLM in order to conserve context memory.
         llm: An ``LLMRouter`` instance. When ``None`` a default router is
             constructed (reads provider/model from environment).
 
@@ -140,19 +139,12 @@ def parse_move(
 
     if llm is None:
         from parley_ai.llm.router import LLMRouter
-        llm = LLMRouter()
+        llm = LLMRouter(agent_role="parser")
 
-    # Pass the last 4 history messages as context so the LLM can determine
-    # whether this is an opening anchor or a counteroffer.
-    ctx: list[dict] = []
-    for msg in history[-4:]:
-        role = msg.get("role", "")
-        content = msg.get("content", "")
-        if role == "user":
-            ctx.append({"role": "user", "content": content})
-        elif role in ("opponent", "assistant"):
-            ctx.append({"role": "assistant", "content": content})
-    ctx.append({"role": "user", "content": user_message})
+    # Pass ONLY the current user message to save LLM context window memory,
+    # specifically to optimize for local quantized models with limited RAM.
+    # The history argument is retained in the signature for backwards compatibility.
+    ctx: list[dict] = [{"role": "user", "content": user_message}]
 
     _t0 = time.perf_counter()
     raw = llm.chat(

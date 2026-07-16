@@ -132,6 +132,12 @@ def generate_opponent_response(
     urgency = hidden_context.get("urgency", "Moderate")
     user_name = hidden_context.get("user_name", "")
 
+    # Token-saving guardrail for local constrained LLMs
+    if len(persona) > 50:
+        persona = persona[:50]
+    if len(urgency) > 50:
+        urgency = urgency[:50]
+
     # Optional: include the specific numeric offer when the orchestrator provides it
     current_offer = hidden_context.get("current_offer")
     value_unit = hidden_context.get("value_unit", "")
@@ -152,9 +158,8 @@ def generate_opponent_response(
         )
 
     if llm is None:
-        import os
         from parley_ai.llm.router import LLMRouter
-        llm = LLMRouter(model=os.getenv("PARLEYLAB_OPPONENT_MODEL"))
+        llm = LLMRouter(agent_role="opponent")
 
     system = PERSONA_SYSTEM_PROMPT_TEMPLATE.format(
         persona=persona,
@@ -166,11 +171,11 @@ def generate_opponent_response(
     if name_line:
         system += "\n" + name_line
 
-    # Build conversation context: up to the last 4 history entries (≈2 full turns).
-    # history[-4:] includes the current user turn when it is the final entry,
+    # Build conversation context: up to the last 2 history entries (≈1 full turn).
+    # history[-2:] includes the current user turn when it is the final entry,
     # which is the standard pipeline contract.
     messages: list[dict] = []
-    for msg in history[-4:]:
+    for msg in history[-2:]:
         role = msg.get("role", "")
         content = msg.get("content", "")
         if role == "user":

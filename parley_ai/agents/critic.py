@@ -144,27 +144,22 @@ def get_critic_feedback(
 
     if llm is None:
         from parley_ai.llm.router import LLMRouter
-        llm = LLMRouter()
+        llm = LLMRouter(agent_role="critic")
 
-    # Build conversation context (last 4 messages) + parsed structure note.
-    ctx: list[dict] = []
-    for msg in history[-4:]:
-        role = msg.get("role", "")
-        content = msg.get("content", "")
-        if role == "user":
-            ctx.append({"role": "user", "content": content})
-        elif role in ("opponent", "assistant"):
-            ctx.append({"role": "assistant", "content": content})
+    # Pass ONLY the current user message to save LLM context window memory.
+    # Extract only the user's last message to prevent the critic from evaluating the AI
+    user_messages = [msg["content"] for msg in history if msg.get("role") == "user"]
+    latest_user_message = user_messages[-1] if user_messages else "No user message found."
 
-    # Append the parsed structure so the LLM has both raw text and
-    # machine-readable move data to reference in its critique.
-    ctx.append({
+    ctx: list[dict] = [{
         "role": "user",
         "content": (
+            f"User's raw message: \"{latest_user_message}\"\n\n"
             f"The move above has been parsed as: {json.dumps(parsed_user_move)}. "
+            f"The specific statement you must evaluate from the candidate is: '{latest_user_message}'. "
             "Please evaluate it according to the rubric."
         ),
-    })
+    }]
 
     _t0 = time.perf_counter()
     raw = llm.chat(

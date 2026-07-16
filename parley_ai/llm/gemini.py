@@ -20,7 +20,7 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-_DEFAULT_MODEL = "gemini-2.0-flash"
+_DEFAULT_MODEL = "gemini-3.5-flash"
 _VALID_ROLES = {"user", "assistant"}
 _ROLE_MAP = {"user": "user", "assistant": "model"}
 _JSON_INSTRUCTION = "Reply ONLY with valid JSON, no preamble or explanation."
